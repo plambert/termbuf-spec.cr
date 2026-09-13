@@ -24,8 +24,8 @@ esac
 MIN_ZIG="0.16.0"
 
 # Whether this is the shard's own git checkout, where vendor/ghostty is a
-# submodule that someone may be editing, rather than a copy installed into
-# another project's lib directory.
+# registered submodule, rather than a copy installed into another project's
+# lib directory.
 own_checkout() {
   [ -e "$root/.git" ] && git -C "$root" submodule status vendor/ghostty >/dev/null 2>&1
 }
@@ -121,13 +121,17 @@ else
   [ -f "$lib" ] || die "build finished but $lib was not produced"
   printf '%s\n' "$commit" > "$stamp"
 
-  # The ghostty source and zig's cache come to about 550MB. That is reasonable
-  # in a checkout where someone may be changing it. It is not reasonable in
-  # every project that depends on this shard, which never reads it again after
-  # the library is built. The source is fetched by hash, so throwing it away
-  # costs one fetch if it is ever needed again.
+  # The ghostty source and zig's cache come to about 550MB. A project that
+  # depends on this shard never reads either one after the library is built.
+  # The headers it does need were installed into vendor/build/include, and the
+  # spec reads them from there. The source is fetched by hash, so removing it
+  # costs one fetch if it is ever wanted again.
   #
-  # Set TERMBUF_SPEC_KEEP_SOURCE=1 to keep it anyway.
+  # This shard's own checkout keeps it, for two reasons. Removing the working
+  # tree of a registered submodule leaves `git status` reporting a deletion.
+  # And `make pin` reads the submodule to write the pin file.
+  #
+  # Set TERMBUF_SPEC_KEEP_SOURCE=1 to keep it anywhere.
   if ! own_checkout && [ -z "${TERMBUF_SPEC_KEEP_SOURCE:-}" ]; then
     log "removing the ghostty source, which is not needed once the library is built"
     rm -rf "$src"

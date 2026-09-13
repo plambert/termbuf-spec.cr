@@ -26,10 +26,13 @@ Production installs are unaffected, because `shards install --production`
 skips development dependencies.
 
 The ghostty source and zig's cache come to about 550MB while the library is
-being built. The script deletes them afterwards, leaving 13MB of built
-library. Set `TERMBUF_SPEC_KEEP_SOURCE=1` to keep the source. This shard's own
-git checkout always keeps it, because there `vendor/ghostty` is a submodule
-that you may want to edit.
+being built. The script deletes them afterwards, leaving 13MB. The headers
+survive in `vendor/build/include`, which is where the spec reads them from.
+Set `TERMBUF_SPEC_KEEP_SOURCE=1` to keep the source.
+
+This shard's own git checkout always keeps the source. Removing the working
+tree of a registered submodule would leave `git status` reporting a deletion,
+and `make pin` reads the submodule to write the pin file.
 
 ## Usage
 
