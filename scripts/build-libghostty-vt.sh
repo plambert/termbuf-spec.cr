@@ -23,6 +23,13 @@ esac
 
 MIN_ZIG="0.16.0"
 
+# Whether this is the shard's own git checkout, where vendor/ghostty is a
+# submodule that someone may be editing, rather than a copy installed into
+# another project's lib directory.
+own_checkout() {
+  [ -e "$root/.git" ] && git -C "$root" submodule status vendor/ghostty >/dev/null 2>&1
+}
+
 die() { printf 'build-libghostty-vt: %s\n' "$*" >&2; exit 1; }
 log() { printf 'build-libghostty-vt: %s\n' "$*" >&2; }
 
@@ -76,7 +83,7 @@ if [ "$(checked_out)" != "$commit" ]; then
   # In this shard's own git checkout the submodule is the source of truth for
   # the working tree, so initialise it rather than fetching over the top. The
   # pin has to agree with it; `make pin` is what makes them agree.
-  if [ -e "$root/.git" ] && git -C "$root" submodule status vendor/ghostty >/dev/null 2>&1; then
+  if own_checkout; then
     log "initialising the vendor/ghostty submodule"
     git -C "$root" submodule update --init vendor/ghostty
   fi
@@ -113,6 +120,18 @@ else
   )
   [ -f "$lib" ] || die "build finished but $lib was not produced"
   printf '%s\n' "$commit" > "$stamp"
+
+  # The ghostty source and zig's cache come to about 550MB. That is reasonable
+  # in a checkout where someone may be changing it. It is not reasonable in
+  # every project that depends on this shard, which never reads it again after
+  # the library is built. The source is fetched by hash, so throwing it away
+  # costs one fetch if it is ever needed again.
+  #
+  # Set TERMBUF_SPEC_KEEP_SOURCE=1 to keep it anyway.
+  if ! own_checkout && [ -z "${TERMBUF_SPEC_KEEP_SOURCE:-}" ]; then
+    log "removing the ghostty source, which is not needed once the library is built"
+    rm -rf "$src"
+  fi
 fi
 
 # The Link annotation needs a string literal. Crystal does not expand __DIR__

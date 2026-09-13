@@ -12,11 +12,24 @@ would have shown.
 ## Requirements
 
 * Crystal 1.21 or newer
-* [zig](https://ziglang.org) 0.16.0 or newer, to build the vendored emulator
-* A git checkout, because `libghostty-vt` is a submodule
+* [zig](https://ziglang.org) 0.16.0 or newer
+* git
+* A network connection on the first install
 
-`shards install` builds the emulator through a postinstall script. It takes
-about a minute the first time and is cached afterwards.
+`shards install` runs a postinstall script. The script fetches the pinned
+ghostty commit named in `vendor/ghostty.pin` and builds `libghostty-vt` from
+it. That takes about a minute. Running it again does nothing.
+
+Every developer on a project that depends on this shard needs zig. A
+postinstall failure stops the whole `shards install`, not just this shard.
+Production installs are unaffected, because `shards install --production`
+skips development dependencies.
+
+The ghostty source and zig's cache come to about 550MB while the library is
+being built. The script deletes them afterwards, leaving 13MB of built
+library. Set `TERMBUF_SPEC_KEEP_SOURCE=1` to keep the source. This shard's own
+git checkout always keeps it, because there `vendor/ghostty` is a submodule
+that you may want to edit.
 
 ## Usage
 
