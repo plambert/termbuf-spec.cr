@@ -1,0 +1,11 @@
+# Which libghostty-vt to build. Read by scripts/build-libghostty-vt.sh.
+#
+# This file exists because vendor/ghostty is a git submodule, and a submodule
+# does not survive `shards install`. Shards checks a shard out without its .git
+# directory, so the build script cannot ask git what the submodule points at.
+# It reads this instead and fetches the commit itself.
+#
+# Run `make pin` after moving the submodule, so that the two agree.
+
+url = https://github.com/ghostty-org/ghostty
+commit = 5252b193cfd52b4bcd868135e21e4563f2f326ec
