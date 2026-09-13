@@ -16,23 +16,21 @@ would have shown.
 * git
 * A network connection on the first install
 
-`shards install` runs a postinstall script. The script fetches the pinned
-ghostty commit named in `vendor/ghostty.pin` and builds `libghostty-vt` from
-it. That takes about a minute. Running it again does nothing.
+`shards install` runs a postinstall script. The script reads
+`vendor/ghostty.pin`, fetches that one ghostty commit by its hash, and builds
+`libghostty-vt` from it. That takes about 75 seconds. It happens once. Every
+run after it sees a library already built from the pinned commit and stops.
 
 Every developer on a project that depends on this shard needs zig. A
 postinstall failure stops the whole `shards install`, not just this shard.
 Production installs are unaffected, because `shards install --production`
 skips development dependencies.
 
-The ghostty source and zig's cache come to about 550MB while the library is
-being built. The script deletes them afterwards, leaving 13MB. The headers
-survive in `vendor/build/include`, which is where the spec reads them from.
-Set `TERMBUF_SPEC_KEEP_SOURCE=1` to keep the source.
-
-This shard's own git checkout always keeps the source. Removing the working
-tree of a registered submodule would leave `git status` reporting a deletion,
-and `make pin` reads the submodule to write the pin file.
+The ghostty source and zig's two caches come to about 550MB during the build.
+They go in one temporary directory, which is removed on the way out whether
+the build worked or not. What is left is 13MB: the shared library and the
+headers, in `vendor/build`. The spec reads those headers, so the arity check
+works without the source.
 
 ## Usage
 
@@ -93,13 +91,14 @@ nothing is probed.
 ## Development
 
 ```console
-make lib     # build the vendored libghostty-vt
+make lib     # fetch and build libghostty-vt
 make spec    # build it if needed, then run the specs
 make check   # format check and specs, which is what CI runs
 ```
 
-The vendored emulator is pinned to a Ghostty commit. Bumping it is a deliberate
-change: `libghostty-vt`'s C API is marked unstable and does move.
+`make pin REF=main` moves the pin, by resolving the ref against the ghostty
+remote. `make lib` then builds what it names. Bumping is a deliberate change:
+`libghostty-vt`'s C API is marked unstable and does move.
 
 ## Contributing
 

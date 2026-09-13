@@ -33,7 +33,8 @@ development_dependencies:
     gitlab: arctic-fox/spectator
     version: "~> 0.11"
 
-# libghostty-vt is vendored as a submodule and built by this script. It needs
-# zig 0.16.0 or newer in PATH.
+# libghostty-vt is built by this script, from the commit named in
+# vendor/ghostty.pin. It needs git and zig 0.16.0 or newer in PATH. The build
+# happens once; afterwards the script sees the built library and stops.
 scripts:
   postinstall: ./scripts/build-libghostty-vt.sh

@@ -11,10 +11,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          # libghostty-vt is vendored at vendor/ghostty and has to be built
-          # before anything here can compile.
-          submodules: true
 
       - uses: crystal-lang/install-crystal@v1
         with:
@@ -24,13 +20,13 @@ jobs:
         with:
           version: 0.16.0
 
-      # Zig's cache is what makes a rebuild of libghostty-vt cheap. The key
-      # follows the vendored commit, so a submodule bump rebuilds and anything
-      # else reuses the cache.
+      # The built library, keyed on the pinned commit. A hit skips the fetch
+      # and the build entirely, because the script stops as soon as it sees a
+      # library built from the commit the pin names.
       - uses: actions/cache@v4
         with:
-          path: vendor/ghostty/.zig-cache
-          key: zig-cache-${{ runner.os }}-${{ hashFiles('.gitmodules') }}-${{ hashFiles('vendor/ghostty/build.zig.zon') }}
+          path: vendor/build
+          key: libghostty-vt-${{ runner.os }}-${{ hashFiles('vendor/ghostty.pin') }}
 
       - run: shards install
 

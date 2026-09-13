@@ -10,8 +10,7 @@
 
 # Built by scripts/build-libghostty-vt.sh
 /vendor/build/
-/vendor/ghostty/.zig-cache/
-/vendor/ghostty/zig-out/
+/vendor/.source/
 /src/termbuf-spec/libghostty/link.cr
 
 # Stray objects extracted from the static library during a link

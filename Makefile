@@ -3,7 +3,7 @@ LIB := vendor/build/lib/libghostty-vt$(if $(filter Darwin,$(shell uname -s)),.dy
 LINK := src/termbuf-spec/libghostty/link.cr
 PIN := vendor/ghostty.pin
 
-.PHONY: all lib spec check format pin clean distclean
+.PHONY: all lib spec check format pin clean
 
 all: lib
 
@@ -26,22 +26,22 @@ check: $(LINK)
 format:
 	crystal tool format src spec
 
-# Rewrite the pin file from wherever the submodule is now pointing.
+# Move the pin to whatever REF names on the ghostty remote.
 #
-# Run this after moving the submodule to a different ghostty commit. The build
-# script reads the pin file rather than the submodule, because a submodule does
-# not survive `shards install`, so the two have to be kept in step.
+#     make pin REF=main
+#     make pin REF=v1.4.0
+#
+# Resolving the ref against the remote means a bump costs one network round
+# trip rather than a checkout. Run `make lib` afterwards to build it.
+REF ?= main
+
 pin:
-	@commit="$$(git -C vendor/ghostty rev-parse HEAD)"; \
-	url="$$(git config -f .gitmodules submodule.vendor/ghostty.url)"; \
-	sed -e "s|^url = .*|url = $$url|" -e "s|^commit = .*|commit = $$commit|" \
-	  $(PIN) > $(PIN).new && mv $(PIN).new $(PIN); \
-	printf 'pinned ghostty %s\n' "$$commit"
+	@url="$$(sed -n 's/^[[:space:]]*url[[:space:]]*=[[:space:]]*//p' $(PIN) | head -1)"; \
+	commit="$$(git ls-remote "$$url" '$(REF)' | cut -f1 | head -1)"; \
+	if [ -z "$$commit" ]; then printf 'no such ref: %s\n' '$(REF)' >&2; exit 1; fi; \
+	sed "s|^commit = .*|commit = $$commit|" $(PIN) > $(PIN).new && mv $(PIN).new $(PIN); \
+	printf 'pinned ghostty %s at %s\n' '$(REF)' "$$commit"
 
-# Drop the build products. Keep the vendored source.
+# Drop the built library. The next build fetches ghostty again.
 clean:
-	rm -rf vendor/build $(LINK)
-
-# Also drop zig's cache, which is large.
-distclean: clean
-	rm -rf vendor/ghostty/.zig-cache vendor/ghostty/zig-out
+	rm -rf vendor/build vendor/.source $(LINK)
