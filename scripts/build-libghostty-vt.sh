@@ -2,9 +2,19 @@
 # Build libghostty-vt and write the Crystal link stub that points at it.
 # Run by `shards install` as a postinstall script, and by `make lib`.
 #
-# The build happens once. Afterwards the only things left on disk are the built
-# library and its headers, which come to about 13MB. The ghostty source is
-# fetched into a temporary directory and deleted when the build finishes.
+# A prebuilt library is downloaded when one has been published for this
+# platform and this pinned commit. Otherwise it is built from source, which
+# needs zig. Set TERMBUF_SPEC_BUILD_FROM_SOURCE=1 to skip the download and
+# always build.
+#
+# Either way it happens once per ghostty commit, for the whole machine.
+#
+# The library goes in a cache directory named after that commit, outside this
+# shard's own directory. That is deliberate. `shards update` replaces the
+# checkout, taking anything inside it with it, so a library kept in here would
+# be fetched again every time this shard changed version. What the library
+# depends on is the pinned ghostty commit, so that is what it is keyed on.
+# vendor/build is a symlink into the cache.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,7 +22,6 @@ pin="$root/vendor/ghostty.pin"
 out="$root/vendor/build"
 work="$root/vendor/.source"
 gen="$root/src/termbuf-spec/libghostty/link.cr"
-stamp="$out/.built-from"
 
 # The shared library is linked rather than the static one. Zig bundles its own
 # compiler_rt into the archive. Its 128-bit helpers collide with the ones the
@@ -21,11 +30,27 @@ stamp="$out/.built-from"
 # A shared library keeps both of those internal. It exports only the ghostty_*
 # symbols.
 case "$(uname -s)" in
-  Darwin) lib="$out/lib/libghostty-vt.dylib" ;;
-  *)      lib="$out/lib/libghostty-vt.so" ;;
+  Darwin) libname="libghostty-vt.dylib" ;;
+  *)      libname="libghostty-vt.so" ;;
 esac
 
 MIN_ZIG="0.16.0"
+
+# What this platform's published asset is called. The pair is what the C ABI
+# actually depends on, so it is what an asset can be shared across.
+case "$(uname -s)" in
+  Darwin) platform_os="darwin" ;;
+  Linux)  platform_os="linux" ;;
+  *)      platform_os="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+esac
+
+case "$(uname -m)" in
+  arm64|aarch64) platform_arch="aarch64" ;;
+  x86_64|amd64)  platform_arch="x86_64" ;;
+  *)             platform_arch="$(uname -m)" ;;
+esac
+
+platform="$platform_os-$platform_arch"
 
 die() { printf 'build-libghostty-vt: %s\n' "$*" >&2; exit 1; }
 log() { printf 'build-libghostty-vt: %s\n' "$*" >&2; }
@@ -40,8 +65,35 @@ pinned() {
 url="$(pinned url)"
 commit="$(pinned commit)"
 
+assets="$(pinned assets)"
+
 [ -n "$url" ] || die "$pin does not name a url"
 [ -n "$commit" ] || die "$pin does not name a commit"
+
+# Where the library lives, keyed on the ghostty commit it was made from. One
+# copy per machine, shared by every project and by every version of this shard
+# that pins the same commit.
+cache_root="${TERMBUF_SPEC_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/termbuf-spec}"
+cache="$cache_root/libghostty-vt/$commit/$platform"
+lib="$cache/lib/$libname"
+stamp="$cache/.built-from"
+
+# Points vendor/build at the cache directory.
+#
+# The spec reads the ghostty headers through this path, and so does anything
+# else that wants them, so the path stays where it was when the library lived
+# inside the shard.
+link_build_dir() {
+  if [ -L "$out" ]; then
+    [ "$(readlink "$out")" = "$cache" ] && return 0
+    rm -f "$out"
+  elif [ -e "$out" ]; then
+    rm -rf "$out"
+  fi
+
+  mkdir -p "$(dirname "$out")"
+  ln -s "$cache" "$out"
+}
 
 # Writes the link stub. Crystal needs a string literal in the Link annotation.
 # It does not expand __DIR__ inside one, and a `lib` declaration cannot be
@@ -54,20 +106,93 @@ write_link_stub() {
 #
 # Built from ghostty $commit with zig $1.
 
-@[Link(ldflags: "-L$out/lib -lghostty-vt -Wl,-rpath,$out/lib")]
+@[Link(ldflags: "-L$cache/lib -lghostty-vt -Wl,-rpath,$cache/lib")]
 lib LibGhosttyVt
 end
 EOF
   log "wrote ${gen#"$root/"}"
 }
 
-# Nothing to do when the library on disk was built from the pinned commit.
-# This is the usual case. The build runs once, and every run after it stops
-# here without fetching anything.
+# Nothing to fetch or build when the cache already holds a library for this
+# commit. This is the usual case, and it covers updating this shard: a new
+# version that pins the same ghostty commit finds the same cache entry.
 if [ -f "$lib" ] && [ -f "$stamp" ] && [ "$(sed -n '1p' "$stamp")" = "$commit" ]; then
-  log "libghostty-vt is up to date ($commit)"
+  log "libghostty-vt for $commit is already built"
+  link_build_dir
   write_link_stub "$(sed -n '2p' "$stamp")"
   exit 0
+fi
+
+# The sha256 of a file, however this system spells that command.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# Downloads a url to a path. Answers non-zero when there is nothing there.
+download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl --silent --fail --location --output "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --quiet --output-document "$2" "$1"
+  else
+    return 1
+  fi
+}
+
+# Tries to install a published build for this platform and this commit.
+#
+# Every failure here is answered by building from source instead, so a
+# platform nobody publishes for, a machine with no network, and a release that
+# does not exist yet all behave the same way. They are slower, not broken.
+try_download() {
+  local base="${TERMBUF_SPEC_ASSET_BASE:-$assets}/libghostty-vt-$commit"
+  local asset="libghostty-vt-$platform.tar.gz"
+  local dir sums expected got
+
+  [ -n "$base" ] || return 1
+
+  dir="$(mktemp -d)"
+  trap 'rm -rf "$dir"' RETURN
+
+  download "$base/SHA256SUMS" "$dir/SHA256SUMS" || return 1
+  download "$base/$asset" "$dir/$asset" || return 1
+
+  # The checksums come from the same release as the asset, so this catches a
+  # truncated or corrupted download rather than a dishonest one. What makes
+  # the asset trustworthy is that it was built by the workflow in this
+  # repository, from the commit this pin file names.
+  expected="$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$dir/SHA256SUMS" | head -1)"
+  [ -n "$expected" ] || { log "the release lists no checksum for $asset"; return 1; }
+
+  got="$(sha256_of "$dir/$asset")"
+  if [ "$got" != "$expected" ]; then
+    log "checksum mismatch for $asset"
+    log "  expected $expected"
+    log "  got      $got"
+    return 1
+  fi
+
+  mkdir -p "$cache"
+  tar -xzf "$dir/$asset" -C "$cache" || return 1
+  [ -f "$lib" ] || { log "$asset did not contain $(basename "$lib")"; return 1; }
+
+  printf '%s\n%s\n' "$commit" "downloaded $platform" > "$stamp"
+  return 0
+}
+
+if [ -z "${TERMBUF_SPEC_BUILD_FROM_SOURCE:-}" ]; then
+  log "looking for a published libghostty-vt for $platform"
+  if try_download; then
+    log "installed the published build for $platform"
+    link_build_dir
+    write_link_stub "downloaded $platform"
+    exit 0
+  fi
+  log "no published build was usable, so building from source"
 fi
 
 command -v git >/dev/null 2>&1 || die "git is required and was not found in PATH"
@@ -84,7 +209,7 @@ cleanup() { rm -rf "$work"; }
 trap cleanup EXIT
 
 rm -rf "$work"
-mkdir -p "$work/src"
+mkdir -p "$work/src" "$cache"
 
 # Fetch the one pinned commit by its hash. A fetch by hash is self checking,
 # because git verifies what arrives against the hash that was asked for.
@@ -100,11 +225,15 @@ git -C "$work/src" checkout --quiet --detach FETCH_HEAD
 log "building libghostty-vt with zig $zig_version"
 (
   cd "$work/src"
+  # TERMBUF_SPEC_ZIG_TARGET is what the release workflow sets to build for a
+  # platform other than the runner's own. Nothing else sets it, so an ordinary
+  # build is a native one.
   zig build \
     -Demit-lib-vt=true \
     -Demit-xcframework=false \
     -Doptimize=ReleaseFast \
-    --prefix "$out" \
+    ${TERMBUF_SPEC_ZIG_TARGET:+-Dtarget="$TERMBUF_SPEC_ZIG_TARGET"} \
+    --prefix "$cache" \
     --cache-dir "$work/cache" \
     --global-cache-dir "$work/global-cache"
 )
@@ -115,4 +244,5 @@ log "building libghostty-vt with zig $zig_version"
 # what the check at the top compares against.
 printf '%s\n%s\n' "$commit" "$zig_version" > "$stamp"
 
+link_build_dir
 write_link_stub "$zig_version"

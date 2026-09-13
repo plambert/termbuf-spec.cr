@@ -16,21 +16,36 @@ would have shown.
 * git
 * A network connection on the first install
 
-`shards install` runs a postinstall script. The script reads
-`vendor/ghostty.pin`, fetches that one ghostty commit by its hash, and builds
-`libghostty-vt` from it. That takes about 75 seconds. It happens once. Every
-run after it sees a library already built from the pinned commit and stops.
+`shards install` runs a postinstall script. The script downloads a prebuilt
+`libghostty-vt` for your platform, which takes a few seconds. When there is no
+published build for your platform it compiles ghostty instead, which takes
+about 75 seconds and needs zig.
 
-Every developer on a project that depends on this shard needs zig. A
-postinstall failure stops the whole `shards install`, not just this shard.
-Production installs are unaffected, because `shards install --production`
-skips development dependencies.
+Either way it happens once per machine, not once per project. The library goes
+in `~/.cache/termbuf-spec`, under the ghostty commit it was built from, and
+`vendor/build` is a symlink into it. Updating this shard does not rebuild
+anything, because a new version that pins the same ghostty commit finds the
+same cache entry.
 
-The ghostty source and zig's two caches come to about 550MB during the build.
-They go in one temporary directory, which is removed on the way out whether
-the build worked or not. What is left is 13MB: the shared library and the
-headers, in `vendor/build`. The spec reads those headers, so the arity check
-works without the source.
+Prebuilt libraries are published for macOS and Linux, on both x86_64 and
+aarch64. On anything else, or with no network, zig is needed to compile
+ghostty. A postinstall failure stops the whole `shards install`, not just this
+shard. Production installs are unaffected, because `shards install
+--production` skips development dependencies.
+
+Set `TERMBUF_SPEC_BUILD_FROM_SOURCE=1` to ignore the published build and
+compile locally. Set `TERMBUF_SPEC_CACHE` to put the library somewhere other
+than `~/.cache/termbuf-spec`.
+
+A local compile fetches the ghostty source and fills zig's two caches, which
+come to about 550MB. They go in one temporary directory, removed on the way
+out whether the build worked or not. What is left is 13MB: the shared library
+and the headers. The spec reads those headers, so its arity check works
+without the source.
+
+A downloaded build is verified against the `SHA256SUMS` published beside it.
+A mismatch is not fatal. The script reports it and compiles from source
+instead, which is what it does for every other reason a download can fail.
 
 ## Usage
 
@@ -99,6 +114,11 @@ make check   # format check and specs, which is what CI runs
 `make pin REF=main` moves the pin, by resolving the ref against the ghostty
 remote. `make lib` then builds what it names. Bumping is a deliberate change:
 `libghostty-vt`'s C API is marked unstable and does move.
+
+Committing a moved pin to `main` runs the publish workflow, which builds the
+four platforms and attaches them to a release named after the ghostty commit.
+That workflow checks first, and does nothing when a complete release for that
+commit already exists.
 
 ## Contributing
 

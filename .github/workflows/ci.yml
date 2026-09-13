@@ -20,12 +20,13 @@ jobs:
         with:
           version: 0.16.0
 
-      # The built library, keyed on the pinned commit. A hit skips the fetch
-      # and the build entirely, because the script stops as soon as it sees a
-      # library built from the commit the pin names.
+      # The machine cache that the build script keeps its library in, keyed on
+      # the pinned commit. A hit means the script does nothing at all. A miss
+      # means it downloads the published build, and falls back to compiling
+      # ghostty only when there is not one.
       - uses: actions/cache@v4
         with:
-          path: vendor/build
+          path: ~/.cache/termbuf-spec
           key: libghostty-vt-${{ runner.os }}-${{ hashFiles('vendor/ghostty.pin') }}
 
       - run: shards install

@@ -5,6 +5,13 @@
 #
 # Move it with `make pin REF=main`, which resolves the ref against the remote.
 # Run `make lib` afterwards to build what it now names.
+#
+# `assets` is where the release workflow publishes prebuilt libraries. The
+# script looks under `<assets>/libghostty-vt-<commit>` for one matching this
+# platform, and builds from source when there is not one. Emptying this line
+# turns the download off for everyone. TERMBUF_SPEC_BUILD_FROM_SOURCE=1 turns
+# it off for one person.
 
 url = https://github.com/ghostty-org/ghostty
 commit = 5252b193cfd52b4bcd868135e21e4563f2f326ec
+assets = https://github.com/plambert/termbuf-spec.cr/releases/download

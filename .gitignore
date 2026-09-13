@@ -21,3 +21,6 @@
 
 # Spectator remembers which examples failed last run
 /.spectator-failures
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

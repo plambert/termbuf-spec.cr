@@ -3,7 +3,7 @@ LIB := vendor/build/lib/libghostty-vt$(if $(filter Darwin,$(shell uname -s)),.dy
 LINK := src/termbuf-spec/libghostty/link.cr
 PIN := vendor/ghostty.pin
 
-.PHONY: all lib spec check format pin clean
+.PHONY: all lib spec check format pin clean distclean
 
 all: lib
 
@@ -42,6 +42,11 @@ pin:
 	sed "s|^commit = .*|commit = $$commit|" $(PIN) > $(PIN).new && mv $(PIN).new $(PIN); \
 	printf 'pinned ghostty %s at %s\n' '$(REF)' "$$commit"
 
-# Drop the built library. The next build fetches ghostty again.
+# Drop this checkout's link to the library. The library itself stays in the
+# machine cache, so the next build costs nothing.
 clean:
 	rm -rf vendor/build vendor/.source $(LINK)
+
+# Drop the machine cache as well. The next build downloads or compiles again.
+distclean: clean
+	rm -rf "$${TERMBUF_SPEC_CACHE:-$${XDG_CACHE_HOME:-$$HOME/.cache}/termbuf-spec}"

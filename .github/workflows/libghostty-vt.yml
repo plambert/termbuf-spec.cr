@@ -1,0 +1,164 @@
+name: Publish libghostty-vt
+
+# Builds libghostty-vt for each platform and publishes the results as release
+# assets, so that installing this shard does not have to compile ghostty.
+#
+# The release is named after the pinned ghostty commit rather than after a
+# version of this shard, because the library depends on that commit and on
+# nothing else here. Moving the pin publishes a new release. Releasing a new
+# version of the shard does not.
+on:
+  push:
+    branches: [main]
+    paths: ['vendor/ghostty.pin']
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even when a complete release already exists
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # Reads the pinned commit, and decides whether anything needs building.
+  #
+  # A release is named after the ghostty commit, so a release of this shard
+  # that leaves the pin alone has nothing to publish. This job says so, and
+  # everything below it is skipped. That holds however the workflow was
+  # started, including a manual run and an edit to a comment in the pin file.
+  pin:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.read.outputs.commit }}
+      needed: ${{ steps.check.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: read
+        run: |
+          commit="$(sed -n 's/^[[:space:]]*commit[[:space:]]*=[[:space:]]*//p' vendor/ghostty.pin | head -1)"
+          [ -n "$commit" ] || { echo "vendor/ghostty.pin names no commit" >&2; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: libghostty-vt-${{ steps.read.outputs.commit }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "forced, so building anyway"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Every asset has to be there. A release left incomplete by a failed
+          # platform is rebuilt rather than left half published.
+          wanted="SHA256SUMS
+          libghostty-vt-darwin-aarch64.tar.gz
+          libghostty-vt-darwin-x86_64.tar.gz
+          libghostty-vt-linux-aarch64.tar.gz
+          libghostty-vt-linux-x86_64.tar.gz"
+
+          have="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' 2>/dev/null || true)"
+
+          missing=""
+          while read -r name; do
+            name="$(echo "$name" | xargs)"
+            [ -n "$name" ] || continue
+            echo "$have" | grep -qxF "$name" || missing="$missing $name"
+          done <<< "$wanted"
+
+          if [ -z "$missing" ]; then
+            echo "$TAG already has every asset, so there is nothing to build"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "missing from $TAG:$missing"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: pin
+    if: needs.pin.outputs.needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-aarch64
+            runs-on: macos-14
+          - platform: darwin-x86_64
+            runs-on: macos-13
+          - platform: linux-x86_64
+            runs-on: ubuntu-latest
+            # An old glibc so that the library loads on distributions older
+            # than the runner. Zig can target one directly.
+            target: x86_64-linux-gnu.2.28
+          - platform: linux-aarch64
+            runs-on: ubuntu-latest
+            target: aarch64-linux-gnu.2.28
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # The same script that a person runs. One build recipe, so a published
+      # asset cannot be built differently from a local build.
+      - run: ./scripts/build-libghostty-vt.sh
+        env:
+          TERMBUF_SPEC_BUILD_FROM_SOURCE: '1'
+          TERMBUF_SPEC_ZIG_TARGET: ${{ matrix.target }}
+
+      # The library and the headers, and nothing else. The stamp file says
+      # which commit built it, and the installing side writes its own.
+      - run: |
+          tar -czf "libghostty-vt-${{ matrix.platform }}.tar.gz" \
+            -C vendor/build lib include
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libghostty-vt-${{ matrix.platform }}
+          path: libghostty-vt-${{ matrix.platform }}.tar.gz
+          retention-days: 1
+
+  publish:
+    needs: [pin, build]
+    if: needs.pin.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - run: |
+          cd assets
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      # Replaces whatever is on that tag, so a rerun after a failed platform
+      # publishes a complete set rather than a partial one.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: libghostty-vt-${{ needs.pin.outputs.commit }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "libghostty-vt at ${{ needs.pin.outputs.commit }}" \
+            --notes "Prebuilt libghostty-vt for ghostty ${{ needs.pin.outputs.commit }}.
+
+          Downloaded by \`scripts/build-libghostty-vt.sh\` when the platform matches.
+          Set \`TERMBUF_SPEC_BUILD_FROM_SOURCE=1\` to build locally instead." \
+            assets/*
