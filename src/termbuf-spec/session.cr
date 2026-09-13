@@ -216,6 +216,45 @@ module TermBuf::Spec
       handled
     end
 
+    # Everything the terminal has turned the typed bytes into, in order.
+    #
+    # What an application that does not use the widget layer needs. It waits
+    # for the input stream to catch up, the same way `#settle` does, and then
+    # hands over the events rather than dispatching them.
+    #
+    #     session.bytes "\e[A"
+    #     event = session.events.first.as TermBuf::Events::Key
+    #     event.key.name.up?             # => true
+    #
+    # A widget application should use `#step` instead, which delivers these to
+    # the tree rather than taking them out of its way.
+    def events(quiet : Int32 = 3) : Array(TermBuf::Event)
+      taken = [] of TermBuf::Event
+
+      settle(quiet) do
+        found = 0
+
+        while event = waiting
+          taken << event
+          found += 1
+        end
+
+        found
+      end
+
+      taken
+    end
+
+    # One event, or `nil` when none is queued right now.
+    private def waiting : TermBuf::Event?
+      select
+      when event = @terminal.events.receive?
+        event
+      else
+        nil
+      end
+    end
+
     # Closes the device. Idempotent, so an ensure block may call it twice.
     def close : Nil
       return if @closed

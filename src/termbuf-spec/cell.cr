@@ -34,7 +34,9 @@ module TermBuf::Spec
   #
   # `text` is the whole grapheme cluster, so a flag or a combining sequence
   # arrives in one piece rather than as the codepoints it was assembled from.
-  # A cell the second half of a wide character sits in has an empty `text`.
+  # A cell that a wide character's second half sits in reports a space, the
+  # same as an empty cell, so that a row reads as a line of text. The wide
+  # character itself is on the cell before it.
   #
   # A `nil` colour means the cell was painted in the terminal's default rather
   # than in no colour at all. Bold brightening is not applied: a bold cell in

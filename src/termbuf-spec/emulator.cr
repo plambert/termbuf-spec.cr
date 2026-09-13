@@ -140,6 +140,50 @@ module TermBuf::Spec
       screen[row * @columns + column]
     end
 
+    # Whether the application has asked for bracketed paste, which is the
+    # terminal's own mode 2004.
+    def bracketed_paste? : Bool
+      mode = LibGhosttyVt::TerminalModeConfig.new
+      mode.mode = LibGhostty::Mode::BRACKETED_PASTE
+
+      result = LibGhosttyVt.terminal_get @handle,
+        LibGhosttyVt::TerminalData::Mode, pointerof(mode)
+      result.success? && mode.value
+    end
+
+    # The bytes a terminal would send for pasting *text*.
+    #
+    # Wrapped in the bracketed paste markers when the application has asked for
+    # them, and sent plain when it has not. That is the terminal's decision
+    # rather than the pasting person's, which is why it is made here from the
+    # mode the application actually set.
+    def paste(text : String) : Bytes
+      bracketed = bracketed_paste?
+      needed = 0_u64
+
+      # A null buffer asks for the size instead of writing anything.
+      LibGhosttyVt.paste_encode text.to_unsafe, text.bytesize.to_u64,
+        bracketed, Pointer(UInt8).null, 0_u64, pointerof(needed)
+
+      buffer = Bytes.new needed
+      written = 0_u64
+      Emulator.check LibGhosttyVt.paste_encode(text.to_unsafe, text.bytesize.to_u64,
+        bracketed, buffer.to_unsafe, buffer.size.to_u64, pointerof(written)),
+        "could not encode a paste"
+
+      buffer[0, written]
+    end
+
+    # Whether *text* can be pasted without risking that part of it is run.
+    #
+    # Unsafe means it carries a line terminator. Bracketed paste asks a shell
+    # to treat the lot as literal text, and a well behaved one does, but the
+    # terminal cannot know the program is well behaved. A spec may paste
+    # unsafe text; this only says what a terminal would warn about.
+    def paste_safe?(text : String) : Bool
+      LibGhosttyVt.paste_is_safe text.to_unsafe, text.bytesize.to_u64
+    end
+
     # Where the cursor is, as row and column, or `nil` when it is hidden.
     def cursor : {Int32, Int32}?
       state = refresh
@@ -344,7 +388,7 @@ module TermBuf::Spec
         begin
           String.new pointer, length
         ensure
-          LibGhosttyVt.free nil, pointer.as(Void*), length
+          LibGhosttyVt.free nil, pointer, length
         end
       ensure
         LibGhosttyVt.formatter_free formatter

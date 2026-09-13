@@ -152,6 +152,74 @@ Spectator.describe TermBuf::Spec::Session do
     end
   end
 
+  it "brackets a paste when the application asked for bracketed paste" do
+    with_form do |session, form, _app|
+      expect(session.emulator.bracketed_paste?).to be_true
+      expect(String.new(session.emulator.paste("one two")))
+        .to eq "\e[200~one two\e[201~"
+
+      session.paste "one two"
+      session.step
+
+      expect(form.field.text).to eq "one two"
+    end
+  end
+
+  it "says which text a terminal would call unsafe to paste" do
+    with_form do |session, _form, _app|
+      expect(session.emulator.paste_safe?("one two")).to be_true
+      expect(session.emulator.paste_safe?("one\ntwo")).to be_false
+    end
+  end
+
+  it "hands over the events themselves for an application without a tree" do
+    TermBuf::Spec::Session.open columns: 60, rows: 10 do |session|
+      session.press "Up"
+      session.type "a"
+
+      keys = session.events.compact_map(&.as?(TermBuf::Events::Key))
+
+      expect(keys.size).to eq 2
+      expect(keys[0].key.name.up?).to be_true
+      expect(keys[1].key.char).to eq 'a'
+    end
+  end
+
+  it "draws without a widget tree at all" do
+    TermBuf::Spec::Session.open columns: 60, rows: 10 do |session|
+      session.terminal.write 2, 1, "painted by hand"
+      session.terminal.paint
+
+      expect(session.screen.line(1)).to eq "  painted by hand"
+    end
+  end
+
+  it "reports a space for the cell a wide character's second half sits in" do
+    TermBuf::Spec::Session.open columns: 60, rows: 10 do |session|
+      session.terminal.write 0, 0, "字a"
+      session.terminal.paint
+
+      screen = session.screen
+      expect(screen.cell(0, 0).text).to eq "字"
+      expect(screen.cell(0, 1).blank?).to be_true
+      expect(screen.cell(0, 2).text).to eq "a"
+    end
+  end
+
+  it "gives the whole screen back as text and as VT sequences" do
+    with_form do |session, form, _app|
+      form.entries.style = TermBuf::Style::DEFAULT.fg TermBuf::Color.rgb(255, 0, 0)
+      form.entries.text = "formatted"
+      session.step
+
+      # The formatter is a different path from the cell reader that Screen
+      # uses, so both are worth exercising.
+      expect(session.emulator.text).to contain "formatted"
+      expect(session.emulator.vt).to contain "formatted"
+      expect(session.emulator.vt).to contain "\e["
+    end
+  end
+
   it "pins a session to a fixed capability set when asked" do
     plain = TermBuf::Capabilities::XTERM
 
