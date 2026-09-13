@@ -1,0 +1,39 @@
+name: termbuf-spec
+version: 0.1.0
+
+authors:
+  - Paul M. Lambert <plambert@plambert.net>
+
+crystal: '>= 1.21.0'
+
+license: MIT
+
+description: |
+  A test harness for TermBuf applications. Runs an application against a real
+  terminal emulator - Ghostty's, embedded as libghostty-vt - held entirely in
+  memory, so a spec can draw widgets, type raw bytes at them, and assert on the
+  cells that came out the other side.
+
+# The harness drives a Termbuf::Terminal, so termbuf and its input side are
+# needed to build one. Widgets are not: an application that uses them brings
+# them itself, and the widget helpers here compile against whatever it has.
+dependencies:
+  termbuf:
+    github: plambert/termbuf.cr
+    version: "~> 0.5"
+  termbuf-input:
+    github: plambert/termbuf-input.cr
+    version: "~> 0.5"
+
+development_dependencies:
+  termbuf-widgets:
+    github: plambert/termbuf-widgets.cr
+    version: "~> 0.5"
+  spectator:
+    gitlab: arctic-fox/spectator
+    version: "~> 0.11"
+
+# libghostty-vt is vendored as a submodule and built by this script. It needs
+# zig 0.16.0 or newer in PATH.
+scripts:
+  postinstall: ./scripts/build-libghostty-vt.sh

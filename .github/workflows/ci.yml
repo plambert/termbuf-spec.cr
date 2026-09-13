@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # libghostty-vt is vendored at vendor/ghostty and has to be built
+          # before anything here can compile.
+          submodules: true
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.21.0
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # Zig's cache is what makes a rebuild of libghostty-vt cheap. The key
+      # follows the vendored commit, so a submodule bump rebuilds and anything
+      # else reuses the cache.
+      - uses: actions/cache@v4
+        with:
+          path: vendor/ghostty/.zig-cache
+          key: zig-cache-${{ runner.os }}-${{ hashFiles('.gitmodules') }}-${{ hashFiles('vendor/ghostty/build.zig.zon') }}
+
+      - run: shards install
+
+      - run: crystal tool format --check src spec
+
+      - run: crystal spec

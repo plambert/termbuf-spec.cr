@@ -1,0 +1,24 @@
+/docs/
+/lib/
+/bin/
+/.shards/
+*.dwarf
+
+# Libraries don't need dependency lock
+# Dependencies will be locked in applications that use them
+/shard.lock
+
+# Built by scripts/build-libghostty-vt.sh
+/vendor/build/
+/vendor/ghostty/.zig-cache/
+/vendor/ghostty/zig-out/
+/src/termbuf-spec/libghostty/link.cr
+
+# Stray objects extracted from the static library during a link
+/*.o
+
+# Scratch programs used while developing; not part of the shard
+/tmp/
+
+# Spectator remembers which examples failed last run
+/.spectator-failures
