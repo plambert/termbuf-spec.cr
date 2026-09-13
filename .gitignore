@@ -8,8 +8,10 @@
 # Dependencies will be locked in applications that use them
 /shard.lock
 
-# Built by scripts/build-libghostty-vt.sh
-/vendor/build/
+# Built by scripts/build-libghostty-vt.sh. No trailing slash on vendor/build:
+# it is a symlink into the machine cache, and a trailing slash matches only a
+# directory.
+/vendor/build
 /vendor/.source/
 /src/termbuf-spec/libghostty/link.cr
 
