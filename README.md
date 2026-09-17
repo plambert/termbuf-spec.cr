@@ -25,7 +25,8 @@ Then `shards install`. Require it from your spec helper:
 ```crystal
 require "spec"
 require "termbuf-spec"
-require "termbuf-spec/widgets"  # only if your application uses termbuf-widgets
+require "termbuf-spec/widgets"   # only if your application uses termbuf-widgets
+require "termbuf-spec/matchers"  # only if you use Spectator, and want them
 ```
 
 Nothing in the harness depends on a test framework. It exposes methods and
@@ -157,6 +158,38 @@ foreground reports `nil` and `bold?`.
 cell.foreground.should eq TermBuf::Spec::Color.new(255, 0, 0)
 cell.foreground.should eq TermBuf::Spec::Color.parse("#ff0000")
 ```
+
+## Spectator matchers
+
+Optional. `require "termbuf-spec/matchers"` adds three matchers to Spectator's
+DSL. Nothing has to be included.
+
+```crystal
+expect(session).to show("termbuf")
+expect(session).to show_line(1, "  painted by hand")
+expect(session).to have_cursor_at(0, 7)
+```
+
+Each one takes a `Session` or a `Screen`, and each one negates with `to_not`.
+A session is read afresh, so one passed before a `#step` reports what is on
+the screen now.
+
+What they add is the failure message. They print the screen as a screen:
+
+```text
+Failure: session does not show "absent"
+
+  expected: "absent"
+    screen:
+
+              painted by hand
+```
+
+`expect(session.screen.text).to contain "absent"` prints the same screen as one
+inspected string with the newlines escaped.
+
+This is the only file here that needs Spectator. Requiring it is what pulls
+Spectator in, so a project using Crystal's `spec` leaves it alone.
 
 ## Without a widget tree
 
