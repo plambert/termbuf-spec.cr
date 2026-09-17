@@ -31,6 +31,7 @@ jobs:
 
       - run: shards install
 
-      - run: crystal tool format --check src spec
-
-      - run: crystal spec
+      # `make check` builds libghostty-vt first, then runs the format check and
+      # the specs. `shards install` does not build it, because a postinstall
+      # script runs for a dependency and not for the shard being installed.
+      - run: make check
