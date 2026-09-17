@@ -13,6 +13,7 @@
 # directory.
 /vendor/build
 /vendor/.source/
+/vendor/.ameba/
 /src/termbuf-spec/libghostty/link.cr
 
 # Stray objects extracted from the static library during a link

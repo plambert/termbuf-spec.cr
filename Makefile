@@ -2,7 +2,13 @@ SHELL := /bin/bash
 LIB := vendor/build/lib/libghostty-vt$(if $(filter Darwin,$(shell uname -s)),.dylib,.so)
 LINK := src/termbuf-spec/libghostty/link.cr
 PIN := vendor/ghostty.pin
-AMEBA := bin/ameba
+
+# ameba is a tool rather than a dependency of this shard, so it is not in
+# shard.yml and a consumer never resolves it. Use whichever is on PATH, and
+# build one when there is none, which is what CI does.
+AMEBA := $(shell command -v ameba 2>/dev/null || echo bin/ameba)
+AMEBA_SRC := vendor/.ameba
+AMEBA_VERSION := v1.7.0
 
 .PHONY: all lib spec check lint format pin clean distclean
 
@@ -27,14 +33,15 @@ check: $(LINK)
 lint: $(AMEBA)
 	$(AMEBA) src spec
 
-# ameba declares a build target rather than an executable, so `shards install`
-# fetches its source and leaves it unbuilt. Build it once into bin/.
-$(AMEBA): lib/ameba/shard.yml
-	@mkdir -p $(dir $(AMEBA))
-	crystal build lib/ameba/src/cli.cr -o $(AMEBA)
-
-lib/ameba/shard.yml: shard.yml
-	shards install
+# ameba has no dependencies of its own, so the checkout is cloned, built, and
+# thrown away again.
+bin/ameba:
+	@mkdir -p bin
+	rm -rf $(AMEBA_SRC)
+	git clone --quiet --depth 1 --branch $(AMEBA_VERSION) \
+	  https://github.com/crystal-ameba/ameba.git $(AMEBA_SRC)
+	crystal build $(AMEBA_SRC)/src/cli.cr -o bin/ameba
+	rm -rf $(AMEBA_SRC)
 
 format:
 	crystal tool format src spec
@@ -58,7 +65,7 @@ pin:
 # Drop this checkout's link to the library. The library itself stays in the
 # machine cache, so the next build costs nothing.
 clean:
-	rm -rf vendor/build vendor/.source $(LINK) $(AMEBA)
+	rm -rf vendor/build vendor/.source $(AMEBA_SRC) $(LINK) bin/ameba
 
 # Drop the machine cache as well. The next build downloads or compiles again.
 distclean: clean
