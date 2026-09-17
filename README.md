@@ -23,19 +23,30 @@ development_dependencies:
 Then `shards install`. Require it from your spec helper:
 
 ```crystal
-require "spectator"
+require "spec"
 require "termbuf-spec"
 require "termbuf-spec/widgets"  # only if your application uses termbuf-widgets
 ```
 
-The examples here use [Spectator](https://gitlab.com/arctic-fox/spectator),
-which is what the TermBuf shards use. Nothing in the harness depends on it.
-Crystal's own `spec` works the same way.
+Nothing in the harness depends on a test framework. It exposes methods and
+objects, and what you assert on them is your own business.
+
+The examples below use `.should`, which Crystal's `spec` provides.
+[Spectator](https://gitlab.com/arctic-fox/spectator) is what the other TermBuf
+shards use, and it reads the same once two lines change in the spec helper:
+
+```crystal
+require "spectator"
+require "spectator/should"  # Spectator turns should-syntax off by default
+```
+
+Spectator also wants `Spectator.describe` at the top of a file where Crystal's
+`spec` wants `describe`. Everything else on this page is the same either way.
 
 ## Writing a spec
 
 ```crystal
-Spectator.describe "the entry form" do
+describe "the entry form" do
   it "shows what was typed" do
     form = Form.new
 
@@ -47,8 +58,8 @@ Spectator.describe "the entry form" do
       session.type "termbuf"
       session.step
 
-      expect(form.field.text).to eq "termbuf"
-      expect(session.screen.includes?("termbuf")).to be_true
+      form.field.text.should eq "termbuf"
+      session.screen.includes?("termbuf").should be_true
     end
   end
 end
@@ -143,8 +154,8 @@ at all. Bold brightening is not applied, so a bold cell in the default
 foreground reports `nil` and `bold?`.
 
 ```crystal
-expect(cell.foreground).to eq TermBuf::Spec::Color.new(255, 0, 0)
-expect(cell.foreground).to eq TermBuf::Spec::Color.parse("#ff0000")
+cell.foreground.should eq TermBuf::Spec::Color.new(255, 0, 0)
+cell.foreground.should eq TermBuf::Spec::Color.parse("#ff0000")
 ```
 
 ## Without a widget tree
@@ -157,11 +168,11 @@ TermBuf::Spec::Session.open columns: 80, rows: 24 do |session|
   session.terminal.write 2, 1, "painted by hand"
   session.terminal.paint
 
-  expect(session.screen.line(1)).to eq "  painted by hand"
+  session.screen.line(1).should eq "  painted by hand"
 
   session.press "Up"
   event = session.events.first.as TermBuf::Events::Key
-  expect(event.key.name.up?).to be_true
+  event.key.name.up?.should be_true
 end
 ```
 
