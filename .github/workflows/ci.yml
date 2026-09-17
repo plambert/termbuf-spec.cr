@@ -6,8 +6,16 @@ on:
   pull_request:
 
 jobs:
+  # The specs, on both operating systems the library is published for. The
+  # emulator is the same on each, but the library is a different file, and the
+  # bindings read struct layouts out of whichever one is linked.
   spec:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-latest, macos-14]
+
+    runs-on: ${{ matrix.runs-on }}
 
     steps:
       - uses: actions/checkout@v7
@@ -36,3 +44,24 @@ jobs:
       # the specs. `shards install` does not build it, because a postinstall
       # script runs for a dependency and not for the shard being installed.
       - run: make check
+
+  # ameba reads the source rather than running it, so one platform answers for
+  # both. It is its own job because building ameba takes about a minute, and
+  # that belongs on one runner rather than on each of them.
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.21.0
+
+      - uses: plambert/setup-zig@d4e0a4ca2bd2d3ec3323a22917f3abe38807a292 # v2.2.1-node24
+        with:
+          version: 0.16.0
+
+      - run: shards install
+
+      - run: make lint

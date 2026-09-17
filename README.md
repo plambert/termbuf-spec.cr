@@ -346,10 +346,14 @@ whether the build worked or not. What is left is 13MB.
 ```console
 make lib     # fetch or build libghostty-vt
 make spec    # build it if needed, then run the specs
-make check   # format check and specs, which is what CI runs
+make check   # format check and specs
+make lint    # ameba
 make clean   # drop this checkout's link to the library
 make distclean  # drop the machine cache as well
 ```
+
+CI runs `make check` on Linux and on macOS, and `make lint` on Linux. ameba
+reads the source rather than running it, so one platform answers for both.
 
 `make pin REF=main` moves the pin, by resolving the ref against the ghostty
 remote. `make lib` then builds what it names. Bumping is a deliberate change,

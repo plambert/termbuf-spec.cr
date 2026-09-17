@@ -2,8 +2,9 @@ SHELL := /bin/bash
 LIB := vendor/build/lib/libghostty-vt$(if $(filter Darwin,$(shell uname -s)),.dylib,.so)
 LINK := src/termbuf-spec/libghostty/link.cr
 PIN := vendor/ghostty.pin
+AMEBA := bin/ameba
 
-.PHONY: all lib spec check format pin clean distclean
+.PHONY: all lib spec check lint format pin clean distclean
 
 all: lib
 
@@ -22,6 +23,18 @@ spec: $(LINK)
 check: $(LINK)
 	crystal tool format --check src spec
 	crystal spec
+
+lint: $(AMEBA)
+	$(AMEBA) src spec
+
+# ameba declares a build target rather than an executable, so `shards install`
+# fetches its source and leaves it unbuilt. Build it once into bin/.
+$(AMEBA): lib/ameba/shard.yml
+	@mkdir -p $(dir $(AMEBA))
+	crystal build lib/ameba/src/cli.cr -o $(AMEBA)
+
+lib/ameba/shard.yml: shard.yml
+	shards install
 
 format:
 	crystal tool format src spec
@@ -45,7 +58,7 @@ pin:
 # Drop this checkout's link to the library. The library itself stays in the
 # machine cache, so the next build costs nothing.
 clean:
-	rm -rf vendor/build vendor/.source $(LINK)
+	rm -rf vendor/build vendor/.source $(LINK) $(AMEBA)
 
 # Drop the machine cache as well. The next build downloads or compiles again.
 distclean: clean

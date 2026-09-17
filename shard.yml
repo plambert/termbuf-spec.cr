@@ -32,6 +32,9 @@ development_dependencies:
   spectator:
     gitlab: arctic-fox/spectator
     version: "~> 0.11"
+  ameba:
+    github: crystal-ameba/ameba
+    version: "~> 1.7"
 
 # libghostty-vt is built by this script, from the commit named in
 # vendor/ghostty.pin. It needs git and zig 0.16.0 or newer in PATH. The build
