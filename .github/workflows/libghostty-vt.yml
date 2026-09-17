@@ -109,7 +109,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: mlugg/setup-zig@v2
+      # A fork of mlugg/setup-zig with one line changed, so that the
+      # action runs on node 24. Upstream still declares node 20, has no
+      # release that does not, and has issues and pull requests disabled.
+      # Pinned by commit rather than by tag.
+      - uses: plambert/setup-zig@d4e0a4ca2bd2d3ec3323a22917f3abe38807a292 # v2.2.1-node24
         with:
           version: 0.16.0
 
