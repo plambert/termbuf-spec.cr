@@ -17,7 +17,7 @@ Add it as a development dependency:
 development_dependencies:
   termbuf-spec:
     github: plambert/termbuf-spec.cr
-    version: "~> 0.1"
+    version: "~> 0.5"
 ```
 
 Then `shards install`. Require it from your spec helper:
