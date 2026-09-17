@@ -34,7 +34,7 @@ jobs:
       commit: ${{ steps.read.outputs.commit }}
       needed: ${{ steps.check.outputs.needed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: read
         run: |
@@ -107,7 +107,7 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: mlugg/setup-zig@v2
         with:
@@ -129,7 +129,7 @@ jobs:
           tar -czf "libghostty-vt-${{ matrix.platform }}.tar.gz" \
             -C vendor/build lib include
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: libghostty-vt-${{ matrix.platform }}
           path: libghostty-vt-${{ matrix.platform }}.tar.gz
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true

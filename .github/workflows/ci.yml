@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: crystal-lang/install-crystal@v1
         with:
@@ -24,7 +24,7 @@ jobs:
       # the pinned commit. A hit means the script does nothing at all. A miss
       # means it downloads the published build, and falls back to compiling
       # ghostty only when there is not one.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/termbuf-spec
           key: libghostty-vt-${{ runner.os }}-${{ hashFiles('vendor/ghostty.pin') }}
