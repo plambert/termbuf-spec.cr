@@ -232,10 +232,19 @@ log "building libghostty-vt with zig $zig_version"
   # TERMBUF_SPEC_ZIG_TARGET is what the release workflow sets to build for a
   # platform other than the runner's own. Nothing else sets it, so an ordinary
   # build is a native one.
+  #
+  # -Dcpu=baseline builds for the architecture rather than for this processor.
+  # Without it a native ReleaseFast build uses whatever instructions the
+  # building machine has, and the library then crashes on a machine that lacks
+  # them. The cache outlives the machine that filled it, so this matters: a CI
+  # cache is restored onto a different runner, and a home directory can be
+  # shared or moved. A cross build already defaults to baseline, so passing it
+  # in both cases makes the two builds match.
   zig build \
     -Demit-lib-vt=true \
     -Demit-xcframework=false \
     -Doptimize=ReleaseFast \
+    -Dcpu=baseline \
     ${TERMBUF_SPEC_ZIG_TARGET:+-Dtarget="$TERMBUF_SPEC_ZIG_TARGET"} \
     --prefix "$cache" \
     --cache-dir "$work/cache" \

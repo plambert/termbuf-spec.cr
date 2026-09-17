@@ -24,14 +24,11 @@ jobs:
         with:
           version: 0.16.0
 
-      # The machine cache that the build script keeps its library in, keyed on
-      # the pinned commit. A hit means the script does nothing at all. A miss
-      # means it downloads the published build, and falls back to compiling
-      # ghostty only when there is not one.
-      - uses: actions/cache@v6
-        with:
-          path: ~/.cache/termbuf-spec
-          key: libghostty-vt-${{ runner.os }}-${{ hashFiles('vendor/ghostty.pin') }}
+      # The library is not cached between runs. The script downloads the
+      # published build for the pinned commit, which takes a second or two,
+      # and a run that starts empty is the same thing a consumer does on a
+      # first install. Caching it hid that path, and carried one runner's
+      # build onto a runner with a different processor.
 
       - run: shards install
 
