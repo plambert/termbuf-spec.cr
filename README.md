@@ -360,6 +360,9 @@ shard needs, and a consumer should never resolve it. `make lint` uses the
 ameba on your PATH. When there is none it clones the version named in the
 Makefile, builds it into `bin/`, and deletes the checkout.
 
+CI runs ameba through `crystal-ameba/github-action` instead, which uses a
+prebuilt container and reports findings on the lines they are about.
+
 `make pin REF=main` moves the pin, by resolving the ref against the ghostty
 remote. `make lib` then builds what it names. Bumping is a deliberate change,
 because `libghostty-vt`'s C API is marked unstable and does move.

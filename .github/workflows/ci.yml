@@ -46,22 +46,18 @@ jobs:
       - run: make check
 
   # ameba reads the source rather than running it, so one platform answers for
-  # both. It is its own job because building ameba takes about a minute, and
-  # that belongs on one runner rather than on each of them.
+  # both, and none of the rest of the build is needed here.
+  #
+  # The action runs ameba from a prebuilt container, so nothing is compiled.
+  # Its 1.0.0 is built on ameba's `latest` image, which is 1.7.0 today and
+  # will be whatever ameba releases next. `make lint` names a version, so the
+  # two can disagree after an ameba release.
+  #
+  # Findings are reported on the lines they are about rather than in the log.
   lint:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
 
-      - uses: crystal-lang/install-crystal@v1
-        with:
-          crystal: 1.21.0
-
-      - uses: plambert/setup-zig@d4e0a4ca2bd2d3ec3323a22917f3abe38807a292 # v2.2.1-node24
-        with:
-          version: 0.16.0
-
-      - run: shards install
-
-      - run: make lint
+      - uses: crystal-ameba/github-action@v1.0.0
