@@ -23,17 +23,6 @@ out="$root/vendor/build"
 work="$root/vendor/.source"
 gen="$root/src/termbuf-spec/libghostty/link.cr"
 
-# The shared library is linked rather than the static one. Zig bundles its own
-# compiler_rt into the archive. Its 128-bit helpers collide with the ones the
-# Crystal runtime carries. Dropping that member does not help, because the
-# archive then loses the long double conversions that Crystal does not provide.
-# A shared library keeps both of those internal. It exports only the ghostty_*
-# symbols.
-case "$(uname -s)" in
-  Darwin) libname="libghostty-vt.dylib" ;;
-  *)      libname="libghostty-vt.so" ;;
-esac
-
 MIN_ZIG="0.16.0"
 
 # What this platform's published asset is called. The pair is what the C ABI
@@ -50,7 +39,22 @@ case "$(uname -m)" in
   *)             platform_arch="$(uname -m)" ;;
 esac
 
-platform="$platform_os-$platform_arch"
+# TERMBUF_SPEC_PLATFORM names the platform being built for, when that is not
+# the one running the build. The release workflow sets it together with
+# TERMBUF_SPEC_ZIG_TARGET, so a cross build is cached and named after its
+# target rather than after the runner. Nothing else sets it.
+platform="${TERMBUF_SPEC_PLATFORM:-$platform_os-$platform_arch}"
+
+# The shared library is linked rather than the static one. Zig bundles its own
+# compiler_rt into the archive. Its 128-bit helpers collide with the ones the
+# Crystal runtime carries. Dropping that member does not help, because the
+# archive then loses the long double conversions that Crystal does not provide.
+# A shared library keeps both of those internal. It exports only the ghostty_*
+# symbols.
+case "$platform" in
+  darwin-*) libname="libghostty-vt.dylib" ;;
+  *)        libname="libghostty-vt.so" ;;
+esac
 
 die() { printf 'build-libghostty-vt: %s\n' "$*" >&2; exit 1; }
 log() { printf 'build-libghostty-vt: %s\n' "$*" >&2; }

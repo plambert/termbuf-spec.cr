@@ -89,8 +89,12 @@ jobs:
         include:
           - platform: darwin-aarch64
             runs-on: macos-14
+          # Built on the aarch64 runner rather than on macos-13. That runner
+          # class is deprecated and its queue is long. Zig cross compiles it
+          # from the same source in the same job time.
           - platform: darwin-x86_64
-            runs-on: macos-13
+            runs-on: macos-14
+            target: x86_64-macos
           - platform: linux-x86_64
             runs-on: ubuntu-latest
             # An old glibc so that the library loads on distributions older
@@ -115,6 +119,9 @@ jobs:
         env:
           TERMBUF_SPEC_BUILD_FROM_SOURCE: '1'
           TERMBUF_SPEC_ZIG_TARGET: ${{ matrix.target }}
+          # Names the platform being built for. Three of these four builds are
+          # cross builds, so the runner's own platform is the wrong name.
+          TERMBUF_SPEC_PLATFORM: ${{ matrix.platform }}
 
       # The library and the headers, and nothing else. The stamp file says
       # which commit built it, and the installing side writes its own.
