@@ -472,8 +472,15 @@ capability probe comes to answer itself.
 * Crystal 1.21 or newer
 * git
 * A network connection on the first install
+* zlib at link time, which the PNG decoder needs
 * [zig](https://ziglang.org) 0.16.0 or newer, when there is no published build
   for your platform
+
+zlib is on every platform this runs on, and the Crystal installs from Homebrew,
+apt and the official packages all link it without being told where it is. One
+that is not given a path to it says `ld: library not found for -lz`, and wants
+one: `crystal spec --link-flags -L/path/to/lib`. A nix Crystal on macOS was like
+this, with zlib in the store and no `-L` reaching the linker.
 
 `shards install` runs a postinstall script in a project that depends on this
 shard. It downloads a prebuilt `libghostty-vt` for your platform, which takes a
