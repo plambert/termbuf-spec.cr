@@ -1,5 +1,6 @@
 require "spectator"
 
+require "./graphics"
 require "./session"
 
 module TermBuf::Spec
@@ -14,6 +15,7 @@ module TermBuf::Spec
   #     expect(session).to show("termbuf")
   #     expect(session).to show_line(1, "  painted by hand")
   #     expect(session).to have_cursor_at(0, 7)
+  #     expect(session).to have_image(1)
   #
   # Each one takes a `Session` or a `Screen`. A `Session` is read afresh, so a
   # session passed before a `#step` reports what is on the screen now.
@@ -22,6 +24,12 @@ module TermBuf::Spec
   # contain "termbuf"` prints two strings of up to a few thousand characters
   # each and leaves the reader to find the difference. These print the screen
   # as a screen.
+  #
+  # `have_image` prints the image storage instead, because a picture is nowhere
+  # in the text and a screen would say nothing about why it failed. Geometry has
+  # no matcher: what a spec asserts there is one number, `Screen::Placement`
+  # prints itself, and `eq` says more about a wrong number than a matcher of its
+  # own would.
   module Matchers
     # The screen to read, from whichever of the two was passed.
     def self.screen(value : Session | Screen) : Screen
@@ -99,6 +107,44 @@ module TermBuf::Spec
       end
     end
 
+    # The image storage as it appears under a failure message.
+    def self.stored(value : Session | Screen) : String
+      String.build do |io|
+        io << '\n'
+        io << screen(value).graphics_to_s
+      end
+    end
+
+    # Asserts that the emulator is holding an image under a given id. See
+    # `Screen#image`.
+    struct HaveImage < ::Spectator::Matchers::StandardMatcher
+      def initialize(@id : ::Spectator::Value(UInt32))
+      end
+
+      def description : String
+        "is holding image #{@id.label}"
+      end
+
+      private def match?(actual : ::Spectator::Expression(T)) : Bool forall T
+        !Matchers.screen(actual.value).image(@id.value).nil?
+      end
+
+      private def failure_message(actual : ::Spectator::Expression(T)) : String forall T
+        "#{actual.label} is not holding image #{@id.label}"
+      end
+
+      private def failure_message_when_negated(actual : ::Spectator::Expression(T)) : String forall T
+        "#{actual.label} is holding image #{@id.label}"
+      end
+
+      private def values(actual : ::Spectator::Expression(T)) forall T
+        {
+          expected: @id.value.to_s,
+          graphics: Matchers.stored(actual.value),
+        }
+      end
+    end
+
     # Asserts where the cursor is. See `Screen#cursor`, which answers
     # `{row, column}` and answers nil when the cursor is hidden.
     struct HaveCursorAt < ::Spectator::Matchers::StandardMatcher
@@ -163,5 +209,14 @@ module Spectator::DSL::Matchers
     %row = ::Spectator::Value.new({{ row }}, {{ row.stringify }})
     %column = ::Spectator::Value.new({{ column }}, {{ column.stringify }})
     ::TermBuf::Spec::Matchers::HaveCursorAt.new(%row, %column)
+  end
+
+  # Asserts that the emulator is holding an image under a given id.
+  #
+  #     expect(session).to have_image(1)
+  #     expect(session).not_to have_image(1)
+  macro have_image(id)
+    %id = ::Spectator::Value.new(({{ id }}).to_u32, {{ id.stringify }})
+    ::TermBuf::Spec::Matchers::HaveImage.new(%id)
   end
 end

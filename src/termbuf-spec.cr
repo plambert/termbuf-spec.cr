@@ -6,6 +6,7 @@ require "./termbuf-spec/cell"
 require "./termbuf-spec/emulator"
 require "./termbuf-spec/feed"
 require "./termbuf-spec/screen"
+require "./termbuf-spec/graphics"
 require "./termbuf-spec/session"
 
 # A test harness for TermBuf applications.

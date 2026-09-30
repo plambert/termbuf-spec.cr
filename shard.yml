@@ -20,15 +20,15 @@ description: |
 dependencies:
   termbuf:
     github: plambert/termbuf.cr
-    version: "~> 0.5"
+    version: "~> 0.8"
   termbuf-input:
     github: plambert/termbuf-input.cr
-    version: "~> 0.5"
+    version: "~> 0.6"
 
 development_dependencies:
   termbuf-widgets:
     github: plambert/termbuf-widgets.cr
-    version: "~> 0.5"
+    version: "~> 0.7"
   spectator:
     gitlab: arctic-fox/spectator
     version: "~> 0.11"

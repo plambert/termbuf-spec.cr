@@ -20,7 +20,14 @@ module TermBuf::Spec
     # under this.
     CLUSTER = 64
 
-    # What a cell is taken to measure, in pixels. Only the image protocols care.
+    # What a cell is taken to measure, in pixels.
+    #
+    # Only the image protocols care, and they care a great deal: how large a
+    # placement comes out in pixels is worked out from this, and a spec asking
+    # `Screen::Placement#pixels` of a terminal that was never told would be told
+    # zero. A plausible size rather than a real one, since there is no window and
+    # no font, and `Session` hands the same two numbers to the image store so
+    # that both ends agree.
     CELL_WIDTH  =  8_u32
     CELL_HEIGHT = 16_u32
 
@@ -51,6 +58,14 @@ module TermBuf::Spec
       Emulator.check LibGhosttyVt.terminal_new(nil, pointerof(handle),
         @columns.to_u16, @rows.to_u16), "could not create a terminal"
       @handle = handle
+
+      # `terminal_new` takes no pixel size, and a terminal that has not been told
+      # one reports every placement as zero pixels across. Resizing to the size
+      # it already is, with the cell size, is the only way to say. See
+      # `CELL_WIDTH`.
+      Emulator.check LibGhosttyVt.terminal_resize(@handle,
+        @columns.to_u16, @rows.to_u16, CELL_WIDTH, CELL_HEIGHT),
+        "could not set the cell size"
 
       # A C callback cannot close over anything, so the emulator is handed to
       # it as the terminal's userdata and unboxed on the way in. The box is
@@ -98,10 +113,8 @@ module TermBuf::Spec
 
     # Resizes the screen, reflowing what is on it the way Ghostty would.
     def resize(columns : Int32, rows : Int32) : Nil
-      # The pixel sizes only matter to the image protocols, which a spec
-      # asserting on cells does not exercise, so a cell is nominally 8 by 16 —
-      # a plausible size rather than zero, which would make every image
-      # calculation degenerate.
+      # The cell size goes again, because this is the only call that carries it.
+      # See `CELL_WIDTH`.
       Emulator.check LibGhosttyVt.terminal_resize(@handle,
         columns.to_u16, rows.to_u16, CELL_WIDTH, CELL_HEIGHT),
         "could not resize the terminal"

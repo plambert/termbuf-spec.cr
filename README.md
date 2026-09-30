@@ -17,7 +17,7 @@ Add it as a development dependency:
 development_dependencies:
   termbuf-spec:
     github: plambert/termbuf-spec.cr
-    version: "~> 0.5"
+    version: "~> 0.6"
 ```
 
 Then `shards install`. Require it from your spec helper:
@@ -159,15 +159,76 @@ cell.foreground.should eq TermBuf::Spec::Color.new(255, 0, 0)
 cell.foreground.should eq TermBuf::Spec::Color.parse("#ff0000")
 ```
 
+## Reading the pictures
+
+Kitty graphics are not cells. Nothing about an image reaches `screen.text` or
+`screen.cell`, so a spec that reads only those cannot tell a picture drawn
+correctly from one drawn the wrong shape, or from one never drawn at all.
+`screen` asks the emulator's own image storage instead.
+
+```crystal
+screen = session.screen
+
+screen.placements          # every placement on the screen
+screen.placement(1)        # one by its id, or nil
+screen.image(1)            # one image by its id, or nil
+screen.images              # every image, by asking after each id in 1..64
+screen.image_ids           # which ids that found
+screen.generation          # a counter the emulator bumps when it changes
+screen.graphics_to_s       # the storage, printed, for a failure message
+```
+
+The protocol has no way to list what a terminal is holding, so `images` is a
+scan. `TermBuf::ImageStore` mints its ids from one upwards and never reuses one,
+so a spec that has sent fewer than sixty-four is covered; widen the range or ask
+after the ids you used.
+
+```crystal
+placement = session.screen.placements.first
+
+placement.image            # which image, by id
+placement.id               # which placement of it
+placement.cells            # a TermBuf::Rect: the cells it covers, on the screen
+placement.pixels           # {width, height}: how large it is drawn
+placement.ratio            # that width over that height
+placement.crop             # the rectangle of the image's own pixels it shows
+placement.z                # where it sits against the text
+placement.visible?         # whether any of it is on the screen at all
+placement.virtual?         # whether it is drawn at Unicode placeholders
+```
+
+Why that rather than reading the bytes the application emitted: the escape
+sequence says what was asked for, and the storage says what a terminal made of
+it. `c=79,r=17` on a picture taller than it is wide is a put that looks
+reasonable and a picture stretched to more than three times its width, and only
+the far end knows that.
+
+```crystal
+store = session.terminal.images
+store.register(TermBuf::Pixels.png(bytes)).show TermBuf::Rect.new(0, 0, 79, 17)
+session.terminal.paint
+
+placement = session.screen.placements.first
+placement.pixels.should eq({204, 272})          # its own proportions, kept
+placement.cells.should eq TermBuf::Rect.new(26, 0, 26, 17)
+```
+
+A session tells the image store how large one of its cells is, because the
+driver would otherwise read that from an ioctl on a descriptor the session does
+not own — the terminal the suite is being run in. The emulator's cell is a fixed
+`TermBuf::Spec::Emulator::CELL_WIDTH` by `CELL_HEIGHT`, and a spec working out
+where a picture should land can use the same two constants.
+
 ## Spectator matchers
 
-Optional. `require "termbuf-spec/matchers"` adds three matchers to Spectator's
+Optional. `require "termbuf-spec/matchers"` adds four matchers to Spectator's
 DSL. Nothing has to be included.
 
 ```crystal
 expect(session).to show("termbuf")
 expect(session).to show_line(1, "  painted by hand")
 expect(session).to have_cursor_at(0, 7)
+expect(session).to have_image(1)
 ```
 
 Each one takes a `Session` or a `Screen`, and each one negates with `to_not`.
@@ -187,6 +248,11 @@ Failure: session does not show "absent"
 
 `expect(session.screen.text).to contain "absent"` prints the same screen as one
 inspected string with the newlines escaped.
+
+`have_image` prints the image storage rather than the screen, because a picture
+is nowhere in the text and a screen would say nothing about why it failed.
+Geometry has no matcher: what a spec asserts there is one number, a placement
+prints itself, and `eq` says more about a wrong number than a matcher would.
 
 This is the only file here that needs Spectator. Requiring it is what pulls
 Spectator in, so a project using Crystal's `spec` leaves it alone.

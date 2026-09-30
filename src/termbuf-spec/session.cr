@@ -11,7 +11,8 @@ module TermBuf::Spec
   # emulator the application's output is painted into, and the
   # `TermBuf::Terminal` between them. Everything a spec does goes through one
   # of `#type`, `#press`, `#paste`, `#bytes` or `#resize`, and everything it
-  # asks goes through `#screen`.
+  # asks goes through `#screen` — the cells through `Screen#cell`, and the
+  # pictures over them through `Screen#placements`.
   class Session
     # How long `#settle` waits before deciding that the application has
     # wedged. A spec that deadlocks should fail rather than hang the suite.
@@ -123,7 +124,25 @@ module TermBuf::Spec
       # and means it, so the limit is off and every resize is issued straight
       # away.
       @terminal.resize_interval = Time::Span.zero
+      pin_cell_size
       @terminal.start
+    end
+
+    # Tells the image store how large one of this emulator's cells is.
+    #
+    # Left alone the driver reads that from `TIOCGWINSZ`, and a session's
+    # terminal is a pipe rather than a device, so the ioctl falls through to the
+    # process's own standard output — the terminal the suite is being run in. A
+    # spec would then be asserting against whatever cell size the person running
+    # it happens to have, and the same spec would pass in one window and fail in
+    # another. The emulator's cell is a fixed `Emulator::CELL_WIDTH` by
+    # `Emulator::CELL_HEIGHT`, so that is what it is told, and a spec working out
+    # where a picture should land can use the same two constants.
+    #
+    # Said again after a resize, because the driver asks the ioctl again there: a
+    # window resized by changing the font is a resize too.
+    private def pin_cell_size : Nil
+      @terminal.images.cell_size = {Emulator::CELL_WIDTH.to_i, Emulator::CELL_HEIGHT.to_i}
     end
 
     # Cells across.
@@ -185,6 +204,7 @@ module TermBuf::Spec
       @rows = rows
       @emulator.resize columns, rows
       @terminal.window_resized TermBuf::ScreenSize.new(columns, rows)
+      pin_cell_size
     end
 
     # Lets the application's fibres run until nothing more is happening.
