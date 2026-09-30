@@ -25,6 +25,27 @@ module TermBuf::Spec
   #     placement.pixels                    # => {204, 272}
   #
   # Everything here asks afresh, the same as the rest of `Screen`.
+  #
+  # ### This emulator draws no PNG
+  #
+  # libghostty-vt has no image decoder of its own. One is installed by whatever
+  # embeds it, through `SysOption::DecodePng`, and this harness installs none, so
+  # a `Png` transmission is refused: nothing reaches the image storage, no
+  # placement is made, and the terminal answers
+  # `EINVAL: unsupported format` naming the image. Raw formats are stored and
+  # placed as they always were, which is why every example in the suite uses
+  # `TermBuf::Pixels.rgb`.
+  #
+  # An application whose pictures are PNGs — which is most of them, since that is
+  # what comes off a disk or a web server — has to hand the harness raw pixels to
+  # be tested against it, or test everything about the placement except the
+  # pixels. Sending `s=` and `v=` with the transmission makes no difference; the
+  # format is what is refused, not the missing dimensions.
+  #
+  # `TermBuf::ImageStore#answered` reads that reply as the far end having lost the
+  # image, which is exactly right — it has not got it — so the store sends the
+  # pixels again on the next `#show`. A spec that sends PNGs and wonders why
+  # nothing is ever `a=p` is seeing that.
   struct Screen
     # One image the emulator is holding.
     #

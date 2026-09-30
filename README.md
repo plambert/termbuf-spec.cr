@@ -219,6 +219,33 @@ not own — the terminal the suite is being run in. The emulator's cell is a fix
 `TermBuf::Spec::Emulator::CELL_WIDTH` by `CELL_HEIGHT`, and a spec working out
 where a picture should land can use the same two constants.
 
+### This emulator draws no PNG
+
+libghostty-vt has no image decoder of its own. One is installed by whatever
+embeds it, and this harness installs none, so a PNG transmission is refused:
+nothing reaches the image storage, no placement is made, and the terminal
+answers `EINVAL: unsupported format` naming the image. Raw formats are stored
+and placed as they always were.
+
+```crystal
+store.register(TermBuf::Pixels.png(bytes)).show box
+session.terminal.paint
+session.screen.images.should be_empty          # refused
+
+store.register(TermBuf::Pixels.rgb(bytes, 7, 11)).show box
+session.terminal.paint
+session.screen.images.size.should eq 1         # stored
+```
+
+So an application whose pictures are PNGs — which is most of them, since that is
+what comes off a disk — has to hand the harness raw pixels to test the drawing,
+or test everything about the placement except the pixels. Sending `s=` and `v=`
+makes no difference: the format is what is refused, not the missing dimensions.
+
+`TermBuf::ImageStore` reads that refusal as the far end having lost the image,
+which is right, so it sends the pixels again on the next showing. A spec that
+sends PNGs and wonders why nothing is ever a bare `a=p` is seeing that.
+
 ## Spectator matchers
 
 Optional. `require "termbuf-spec/matchers"` adds four matchers to Spectator's
@@ -412,8 +439,9 @@ capability probe comes to answer itself.
 * [zig](https://ziglang.org) 0.16.0 or newer, when there is no published build
   for your platform
 
-`shards install` runs a postinstall script. It downloads a prebuilt
-`libghostty-vt` for your platform, which takes a few seconds. Builds are
+`shards install` runs a postinstall script in a project that depends on this
+shard. It downloads a prebuilt `libghostty-vt` for your platform, which takes a
+few seconds. Builds are
 published for macOS and Linux on x86_64 and aarch64. On anything else, or with
 no network, it compiles ghostty instead, which takes about 75 seconds and needs
 zig.
@@ -441,6 +469,12 @@ A local compile fetches the ghostty source and fills zig's two caches, about
 whether the build worked or not. What is left is 13MB.
 
 ## Development
+
+In a clone of this shard, `shards install` does **not** build the library.
+shards runs a postinstall for a shard it installs as a dependency and never for
+the root shard, so the `scripts.postinstall` line above does nothing here. Run
+`make lib` once; until then `crystal spec` fails to link. `make spec` and
+`make check` depend on it and build it for you.
 
 ```console
 make lib     # fetch or build libghostty-vt

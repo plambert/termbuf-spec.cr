@@ -33,8 +33,15 @@ development_dependencies:
     gitlab: arctic-fox/spectator
     version: "~> 0.11"
 
-# libghostty-vt is built by this script, from the commit named in
-# vendor/ghostty.pin. It needs git and zig 0.16.0 or newer in PATH. The build
-# happens once; afterwards the script sees the built library and stops.
+# libghostty-vt comes from the commit named in vendor/ghostty.pin: a published
+# build is downloaded where there is one for this platform, and otherwise it is
+# built from source, which needs git and zig 0.16.0 or newer in PATH. Either way
+# it happens once per machine; afterwards the script finds it in the cache and
+# stops.
+#
+# This runs for a project that depends on this shard. It does not run in a clone
+# of this shard, because shards runs a postinstall for a shard it installs as a
+# dependency and never for the root shard. A contributor runs `make lib` once
+# instead, which is what `make check` and `make spec` depend on.
 scripts:
   postinstall: ./scripts/build-libghostty-vt.sh

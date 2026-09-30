@@ -1,4 +1,6 @@
 require "./spec_helper"
+require "compress/zlib"
+require "digest/crc32"
 require "../src/termbuf-spec/matchers"
 
 # What a terminal does with the kitty graphics protocol, and what
@@ -41,6 +43,41 @@ Spectator.describe "kitty graphics" do
   # The shape of the covers the application that found the stretching draws.
   def cover : Pixels
     raw 255, 340
+  end
+
+  # A real PNG, *width* by *height*, built here so that nothing is read off disk:
+  # the signature, an `IHDR` with its length and its checksum, one `IDAT` of
+  # deflated rows, and an `IEND`. `file` reads one of these as a PNG.
+  def png(width : Int32, height : Int32) : Pixels
+    bytes = IO::Memory.new
+    bytes.write Bytes[137, 80, 78, 71, 13, 10, 26, 10]
+
+    header = IO::Memory.new
+    header << "IHDR"
+    header.write_bytes width.to_u32, IO::ByteFormat::BigEndian
+    header.write_bytes height.to_u32, IO::ByteFormat::BigEndian
+    # Eight bits a channel, three channels, no interlacing.
+    header.write Bytes[8, 2, 0, 0, 0]
+    chunk bytes, header.to_slice
+
+    rows = IO::Memory.new
+    rows << "IDAT"
+    Compress::Zlib::Writer.open(rows) do |deflated|
+      # One filter byte and three bytes a pixel, per row.
+      height.times { deflated.write Bytes.new(1 + width * 3, 0_u8) }
+    end
+    chunk bytes, rows.to_slice
+
+    chunk bytes, "IEND".to_slice
+
+    Pixels.png bytes.to_slice
+  end
+
+  # One PNG chunk: its length, then its type and body, then their checksum.
+  def chunk(into : IO, body : Bytes) : Nil
+    into.write_bytes (body.size - 4).to_u32, IO::ByteFormat::BigEndian
+    into.write body
+    into.write_bytes Digest::CRC32.checksum(body), IO::ByteFormat::BigEndian
   end
 
   # Writes an escape sequence straight at the emulator, which is what an example
@@ -131,6 +168,118 @@ Spectator.describe "kitty graphics" do
         printed = session.screen.graphics_to_s
         expect(printed).to contain "i=1 8x32 rgb"
         expect(printed).to contain "i=1 p=1 at 0,0 2x1 pixels 16x16"
+      end
+    end
+  end
+
+  # libghostty-vt has no image decoder of its own: one is installed by whatever
+  # embeds it, and this harness installs none. So the raw formats work and PNG
+  # does not, which is why every other example here sends `Pixels.rgb`. These are
+  # here so that a libghostty that grows a decoder, or a harness that installs
+  # one, fails them loudly rather than quietly changing what a suite can test.
+  describe "a png" do
+    it "reads its own dimensions out of the header before anything is sent" do
+      expect(png(7, 11).width).to eq 7
+      expect(png(7, 11).height).to eq 11
+      expect(png(7, 11).format).to eq Pixels::Format::Png
+    end
+
+    it "ghostty refuses the format and stores nothing" do
+      Session.open 40, 12 do |session|
+        pixels = png 7, 11
+        emulate session, "a=t,f=#{pixels.format.value},i=1,q=1",
+          Base64.strict_encode(pixels.bytes)
+
+        expect(session).not_to have_image 1
+        expect(session.screen.placements).to be_empty
+      end
+    end
+
+    # The obvious first guess, and not it: the format is what is refused, not the
+    # missing dimensions.
+    it "ghostty refuses it with the dimension keys as well" do
+      Session.open 40, 12 do |session|
+        pixels = png 7, 11
+        emulate session, "a=t,f=#{pixels.format.value},s=7,v=11,i=1,q=1",
+          Base64.strict_encode(pixels.bytes)
+
+        expect(session).not_to have_image 1
+      end
+    end
+
+    it "ghostty says why, naming the image" do
+      Session.open 40, 12 do |session|
+        pixels = png 7, 11
+        emulate session, "a=t,f=#{pixels.format.value},i=4,q=1",
+          Base64.strict_encode(pixels.bytes)
+
+        reply = session.events.compact_map(&.as? TermBuf::Events::Response).first
+        expect(String.new reply.bytes).to contain "EINVAL: unsupported format"
+        expect(String.new reply.bytes).to contain "i=4"
+      end
+    end
+
+    it "ghostty stores the same picture as raw pixels in the same session" do
+      Session.open 40, 12 do |session|
+        transmit session, 1, png(7, 11)
+        transmit session, 2, raw(7, 11)
+
+        expect(session).not_to have_image 1
+        expect(session).to have_image 2
+      end
+    end
+
+    # The store hears the refusal as the far end having lost the image, which is
+    # right: it has not got it. So the pixels go again on every showing, and a
+    # spec that sends PNGs and wonders why nothing is ever a bare put is seeing
+    # this and not a bug in the store.
+    it "has the store send the pixels again once it hears the refusal" do
+      Session.open 40, 12 do |session|
+        image = session.terminal.images.register png(7, 11)
+        image.show Rect.new(0, 0, 4, 2)
+        session.terminal.paint
+        # The pixels did go, so the store is right to think they are there until
+        # it reads what came back.
+        expect(image.uploaded?).to be_true
+        expect(String.new session.feed.written).to contain "a=T"
+
+        # Draining the events is what hands the refusal to the store.
+        session.events
+        session.feed.rewind
+        image.show Rect.new(0, 4, 4, 2)
+        session.terminal.paint
+
+        # So the pixels go again rather than a bare put over nothing, and the
+        # first showing is put back after them, because sending an image's pixels
+        # again takes its other placements off at the far end.
+        emitted = String.new session.feed.written
+        expect(emitted).to contain "a=T"
+        expect(emitted).to contain "a=p,i=#{image.id},p=1,"
+        expect(emitted.index! "a=T").to be < emitted.index!("a=p")
+        # And the terminal refused them again, so there is still nothing there.
+        expect(session).not_to have_image image.id
+        expect(session.screen.placements).to be_empty
+      end
+    end
+
+    # Against raw pixels, which the terminal does keep, the same sequence sends
+    # them once and positions the second showing.
+    it "sends raw pixels once and positions the rest" do
+      Session.open 40, 12 do |session|
+        image = session.terminal.images.register raw(7, 11)
+        image.show Rect.new(0, 0, 4, 2)
+        session.terminal.paint
+
+        session.events
+        session.feed.rewind
+        image.show Rect.new(0, 4, 4, 2)
+        session.terminal.paint
+
+        emitted = String.new session.feed.written
+        expect(emitted).to contain "a=p"
+        expect(emitted).not_to contain "a=T"
+        expect(session).to have_image image.id
+        expect(session.screen.placements.size).to eq 2
       end
     end
   end
