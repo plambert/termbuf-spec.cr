@@ -219,32 +219,68 @@ not own — the terminal the suite is being run in. The emulator's cell is a fix
 `TermBuf::Spec::Emulator::CELL_WIDTH` by `CELL_HEIGHT`, and a spec working out
 where a picture should land can use the same two constants.
 
-### This emulator draws no PNG
+### PNG
 
-libghostty-vt has no image decoder of its own. One is installed by whatever
-embeds it, and this harness installs none, so a PNG transmission is refused:
-nothing reaches the image storage, no placement is made, and the terminal
-answers `EINVAL: unsupported format` naming the image. Raw formats are stored
-and placed as they always were.
+libghostty-vt has no image decoder of its own: it asks whoever embeds it for one.
+Requiring this harness installs one, over
+[stumpy_png](https://github.com/stumpycr/stumpy_png), so a picture that came off
+a disk or a web server can be sent as it is.
 
 ```crystal
-store.register(TermBuf::Pixels.png(bytes)).show box
+store.register(TermBuf::Pixels.png(File.read("cover.png").to_slice)).show box
 session.terminal.paint
-session.screen.images.should be_empty          # refused
 
-store.register(TermBuf::Pixels.rgb(bytes, 7, 11)).show box
-session.terminal.paint
-session.screen.images.size.should eq 1         # stored
+image = session.screen.images.first
+image.width                                    # => 255, out of the file
+image.format                                   # => Rgba
+image.bytesize                                 # => 255 * 340 * 4
 ```
 
-So an application whose pictures are PNGs — which is most of them, since that is
-what comes off a disk — has to hand the harness raw pixels to test the drawing,
-or test everything about the placement except the pixels. Sending `s=` and `v=`
-makes no difference: the format is what is refused, not the missing dimensions.
+The image the emulator holds is the decoded picture, so it reads back as `rgba`
+at four bytes a pixel whatever the file was: 1 to 16 bits a channel, greyscale,
+palette, RGB or RGBA, interlaced or not. Its width and height are the file's own,
+which the terminal read out of it, so a transmission carrying no `s=` or `v=`
+still reports them.
 
-`TermBuf::ImageStore` reads that refusal as the far end having lost the image,
-which is right, so it sends the pixels again on the next showing. A spec that
-sends PNGs and wonders why nothing is ever a bare `a=p` is seeing that.
+Two things the decoder does not do. Transparency expressed as a `tRNS` colour key
+rather than as an alpha channel is lost, and those pixels come back opaque; an
+alpha channel is kept, which is how anything recent writes transparency. And an
+animated PNG decodes to its first frame.
+
+Decoding costs real time in a build without `--release`, which is what
+`crystal spec` makes: about two thirds of a second for 800x1200, and long enough
+for a four-megapixel picture to run into `Session::DEADLINE`. Fixtures want to be
+about the size of the box they are drawn in.
+
+`TermBuf::Spec::Png.pixels` is the same conversion, as pixels rather than as a
+transmission, which is what a spec asserting on the bytes wants.
+
+```crystal
+TermBuf::Spec::Png.pixels(bytes).try(&.format)   # => Rgba
+```
+
+#### Without a decoder
+
+`Png.clear` takes it out again, for every terminal in the process, because the
+setting is libghostty's and process wide. `Png.without` is the scoped form.
+
+```crystal
+TermBuf::Spec::Png.without do
+  store.register(TermBuf::Pixels.png(bytes)).show box
+  session.terminal.paint
+  session.screen.images.should be_empty          # refused
+end
+```
+
+A refused transmission reaches no image storage and makes no placement, and the
+terminal answers `EINVAL: unsupported format` naming the image. Sending `s=` and
+`v=` makes no difference: the format is what is refused, not the missing
+dimensions. `TermBuf::ImageStore` reads that as the far end having lost the
+image, which is right, so it sends the pixels again on every showing rather than
+a bare `a=p`.
+
+A file the decoder cannot read is refused as well, with `EINVAL: invalid data`,
+which is how the two are told apart.
 
 ## Spectator matchers
 

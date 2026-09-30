@@ -17,7 +17,14 @@ description: |
 # The harness drives a Termbuf::Terminal, so termbuf and its input side are
 # needed to build one. Widgets are not: an application that uses them brings
 # them itself, and the widget helpers here compile against whatever it has.
+#
+# stumpy_png is the PNG decoder handed to libghostty-vt, which has none of its
+# own and refuses the format without one. It is pure Crystal, so the built
+# library stays this shard's only native dependency. See `TermBuf::Spec::Png`.
 dependencies:
+  stumpy_png:
+    github: stumpycr/stumpy_png
+    version: "~> 5.0"
   termbuf:
     github: plambert/termbuf.cr
     version: "~> 0.8"

@@ -2,6 +2,7 @@ require "termbuf"
 
 require "./termbuf-spec/version"
 require "./termbuf-spec/libghostty"
+require "./termbuf-spec/png"
 require "./termbuf-spec/cell"
 require "./termbuf-spec/emulator"
 require "./termbuf-spec/feed"
@@ -33,5 +34,8 @@ require "./termbuf-spec/session"
 #
 # Widget applications want `require "termbuf-spec/widgets"` as well, which adds
 # `Session#attach` and `Session#step`.
+#
+# Requiring this installs a PNG decoder into libghostty-vt, which has none of its
+# own. See `Png`.
 module TermBuf::Spec
 end

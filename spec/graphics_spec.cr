@@ -172,101 +172,105 @@ Spectator.describe "kitty graphics" do
     end
   end
 
-  # libghostty-vt has no image decoder of its own: one is installed by whatever
-  # embeds it, and this harness installs none. So the raw formats work and PNG
-  # does not, which is why every other example here sends `Pixels.rgb`. These are
-  # here so that a libghostty that grows a decoder, or a harness that installs
-  # one, fails them loudly rather than quietly changing what a suite can test.
+  # libghostty-vt has no image decoder of its own. It asks whoever embeds it for
+  # one, and requiring this harness installs `TermBuf::Spec::Png`, so a PNG is
+  # decoded here: it reaches the image storage as `rgba`, four bytes a pixel
+  # whatever the file was, and is placed like any other picture.
+  # `TermBuf::Spec::Png.clear` takes the decoder out again, and the last group
+  # below is what a terminal without one does.
   describe "a png" do
+    # The shapes a PNG comes in, as real files off a real encoder rather than
+    # ones this spec built, each six pixels across and four down. See
+    # `spec/pngs/README.md`.
+    SHAPES = %w[rgb8.png rgba8.png palette.png gray8.png gray1.png rgb16.png
+      interlaced.png keyed.png]
+
+    def fixture(name : String) : Bytes
+      File.read(File.join(__DIR__, "pngs", name)).to_slice
+    end
+
+    def fixture_pixels(name : String) : Pixels
+      pixels = TermBuf::Spec::Png.pixels fixture(name)
+      fail "#{name} did not decode" unless pixels
+      pixels
+    end
+
     it "reads its own dimensions out of the header before anything is sent" do
       expect(png(7, 11).width).to eq 7
       expect(png(7, 11).height).to eq 11
       expect(png(7, 11).format).to eq Pixels::Format::Png
     end
 
-    it "ghostty refuses the format and stores nothing" do
+    it "has a decoder, because requiring the harness installs one" do
+      expect(TermBuf::Spec::Png.installed?).to be_true
+    end
+
+    it "ghostty decodes it and holds it as rgba" do
+      Session.open 40, 12 do |session|
+        transmit session, 1, png(7, 11)
+
+        image = session.screen.image 1
+        fail "the emulator is holding no image 1" unless image
+
+        expect(image.width).to eq 7
+        expect(image.height).to eq 11
+        # What the terminal is holding, which is not what was sent: the decoder
+        # hands back eight bit RGBA and the encoded bytes are gone.
+        expect(image.format).to eq TermBuf::Spec::Screen::Image::Format::Rgba
+        expect(image.bytesize).to eq 7 * 11 * 4
+      end
+    end
+
+    # A transmission that carries no `s=` or `v=`, which is what the store sends
+    # for a PNG, because the file says.
+    it "ghostty reads the dimensions out of the file" do
       Session.open 40, 12 do |session|
         pixels = png 7, 11
         emulate session, "a=t,f=#{pixels.format.value},i=1,q=1",
           Base64.strict_encode(pixels.bytes)
 
-        expect(session).not_to have_image 1
-        expect(session.screen.placements).to be_empty
+        image = session.screen.image 1
+        fail "the emulator is holding no image 1" unless image
+        expect(image.width).to eq 7
+        expect(image.height).to eq 11
       end
     end
 
-    # The obvious first guess, and not it: the format is what is refused, not the
-    # missing dimensions.
-    it "ghostty refuses it with the dimension keys as well" do
+    # Every shape, and the same answer for all of them.
+    it "ghostty stores each shape a png comes in" do
+      SHAPES.each do |name|
+        Session.open 40, 12 do |session|
+          transmit session, 1, Pixels.png(fixture name)
+
+          image = session.screen.image 1
+          fail "#{name} was not stored" unless image
+          expect(image.width).to eq 6
+          expect(image.height).to eq 4
+          expect(image.format).to eq TermBuf::Spec::Screen::Image::Format::Rgba
+          expect(image.bytesize).to eq 6 * 4 * 4
+        end
+      end
+    end
+
+    it "ghostty places it, keeping the proportions the file has" do
       Session.open 40, 12 do |session|
-        pixels = png 7, 11
-        emulate session, "a=t,f=#{pixels.format.value},s=7,v=11,i=1,q=1",
-          Base64.strict_encode(pixels.bytes)
+        image = session.terminal.images.register png(8, 32)
+        image.show Rect.new(0, 0, 10, 4)
+        session.terminal.paint
+        session.events
 
-        expect(session).not_to have_image 1
+        placement = only session
+        expect(placement.ratio).to eq 8 / 32
+        expect(placement).to be_visible
       end
     end
 
-    it "ghostty says why, naming the image" do
-      Session.open 40, 12 do |session|
-        pixels = png 7, 11
-        emulate session, "a=t,f=#{pixels.format.value},i=4,q=1",
-          Base64.strict_encode(pixels.bytes)
-
-        reply = session.events.compact_map(&.as? TermBuf::Events::Response).first
-        expect(String.new reply.bytes).to contain "EINVAL: unsupported format"
-        expect(String.new reply.bytes).to contain "i=4"
-      end
-    end
-
-    it "ghostty stores the same picture as raw pixels in the same session" do
-      Session.open 40, 12 do |session|
-        transmit session, 1, png(7, 11)
-        transmit session, 2, raw(7, 11)
-
-        expect(session).not_to have_image 1
-        expect(session).to have_image 2
-      end
-    end
-
-    # The store hears the refusal as the far end having lost the image, which is
-    # right: it has not got it. So the pixels go again on every showing, and a
-    # spec that sends PNGs and wonders why nothing is ever a bare put is seeing
-    # this and not a bug in the store.
-    it "has the store send the pixels again once it hears the refusal" do
+    # What the decoder is for, from the store's side: the far end keeps the
+    # pixels, so a second showing is a put. Compare the refusal below, where
+    # every showing sends them again.
+    it "has the store send the pixels once and position the rest" do
       Session.open 40, 12 do |session|
         image = session.terminal.images.register png(7, 11)
-        image.show Rect.new(0, 0, 4, 2)
-        session.terminal.paint
-        # The pixels did go, so the store is right to think they are there until
-        # it reads what came back.
-        expect(image.uploaded?).to be_true
-        expect(String.new session.feed.written).to contain "a=T"
-
-        # Draining the events is what hands the refusal to the store.
-        session.events
-        session.feed.rewind
-        image.show Rect.new(0, 4, 4, 2)
-        session.terminal.paint
-
-        # So the pixels go again rather than a bare put over nothing, and the
-        # first showing is put back after them, because sending an image's pixels
-        # again takes its other placements off at the far end.
-        emitted = String.new session.feed.written
-        expect(emitted).to contain "a=T"
-        expect(emitted).to contain "a=p,i=#{image.id},p=1,"
-        expect(emitted.index! "a=T").to be < emitted.index!("a=p")
-        # And the terminal refused them again, so there is still nothing there.
-        expect(session).not_to have_image image.id
-        expect(session.screen.placements).to be_empty
-      end
-    end
-
-    # Against raw pixels, which the terminal does keep, the same sequence sends
-    # them once and positions the second showing.
-    it "sends raw pixels once and positions the rest" do
-      Session.open 40, 12 do |session|
-        image = session.terminal.images.register raw(7, 11)
         image.show Rect.new(0, 0, 4, 2)
         session.terminal.paint
 
@@ -281,6 +285,201 @@ Spectator.describe "kitty graphics" do
         expect(session).to have_image image.id
         expect(session.screen.placements.size).to eq 2
       end
+    end
+
+    # A decoder that answers false, which is what a file it cannot read means.
+    # The reply says which of the two went wrong: `invalid data` for a file the
+    # decoder refused, against `unsupported format` for there being no decoder.
+    it "ghostty refuses a png the decoder cannot read, and says why" do
+      Session.open 40, 12 do |session|
+        emulate session, "a=t,f=#{Pixels::Format::Png.value},i=4,q=1",
+          Base64.strict_encode(fixture("rgb8.png")[0, 40])
+
+        expect(session).not_to have_image 4
+        expect(session.screen.placements).to be_empty
+
+        reply = session.events.compact_map(&.as? TermBuf::Events::Response).first
+        expect(String.new reply.bytes).to contain "EINVAL: invalid data"
+        expect(String.new reply.bytes).to contain "i=4"
+      end
+    end
+
+    # The conversion on its own. `Png.pixels` is the only way to look at it from
+    # Crystal, because the callback itself is reached from inside the library.
+    describe "the conversion" do
+      it "keeps eight bit rgb as it was" do
+        pixels = fixture_pixels "rgb8.png"
+
+        expect(pixels.format).to eq Pixels::Format::Rgba
+        expect(pixels.width).to eq 6
+        expect(pixels.height).to eq 4
+        expect(pixels.bytes.size).to eq 6 * 4 * 4
+        expect(pixels.bytes[0, 4]).to eq Bytes[255, 0, 0, 255]
+      end
+
+      it "keeps an alpha channel" do
+        expect(fixture_pixels("rgba8.png").bytes[0, 4]).to eq Bytes[255, 0, 0, 128]
+      end
+
+      it "scales sixteen bit channels down to eight" do
+        expect(fixture_pixels("rgb16.png").bytes[0, 4]).to eq Bytes[255, 0, 0, 255]
+      end
+
+      it "widens greyscale to three channels" do
+        expect(fixture_pixels("gray8.png").bytes[0, 4]).to eq Bytes[127, 127, 127, 255]
+      end
+
+      it "unpacks a bit depth under a byte" do
+        expect(fixture_pixels("gray1.png").bytes[0, 4]).to eq Bytes[0, 0, 0, 255]
+      end
+
+      it "reads a palette" do
+        expect(fixture_pixels("palette.png").bytes[0, 4]).to eq Bytes[0, 255, 0, 255]
+      end
+
+      it "reads an interlaced image" do
+        expect(fixture_pixels("interlaced.png").bytes[0, 4]).to eq Bytes[0, 0, 255, 255]
+      end
+
+      # The gap worth knowing about, so it is written down as an assertion rather
+      # than only in a comment. keyed.png is a red rectangle on a ground that is
+      # transparent by way of a palette entry named in a `tRNS` chunk, and the
+      # decoder reads `IHDR`, `PLTE`, `IDAT` and `IEND` and nothing else. So the
+      # ground comes back opaque.
+      it "loses transparency held in a tRNS chunk" do
+        pixels = fixture_pixels "keyed.png"
+
+        # 0,0 is the transparent ground, and would be 0, 0, 0, 0.
+        expect(pixels.bytes[0, 4]).to eq Bytes[0, 0, 0, 255]
+        # 3,2 is inside the rectangle, and is right.
+        expect(pixels.bytes[(2 * 6 + 3) * 4, 4]).to eq Bytes[255, 0, 0, 255]
+      end
+
+      it "answers nil for bytes it cannot read" do
+        expect(TermBuf::Spec::Png.pixels "not a png at all".to_slice).to be_nil
+        expect(TermBuf::Spec::Png.pixels fixture("rgb8.png")[0, 30]).to be_nil
+      end
+    end
+
+    # What this harness did before it had a decoder, which is still what a
+    # terminal without one does, and what the examples above are interesting
+    # against. The setting is process wide, so it goes back afterwards.
+    describe "with the decoder taken out" do
+      before_each { TermBuf::Spec::Png.clear }
+      after_each { TermBuf::Spec::Png.install }
+
+      it "says so" do
+        expect(TermBuf::Spec::Png.installed?).to be_false
+      end
+
+      it "ghostty refuses the format and stores nothing" do
+        Session.open 40, 12 do |session|
+          pixels = png 7, 11
+          emulate session, "a=t,f=#{pixels.format.value},i=1,q=1",
+            Base64.strict_encode(pixels.bytes)
+
+          expect(session).not_to have_image 1
+          expect(session.screen.placements).to be_empty
+        end
+      end
+
+      # The obvious first guess, and not it: the format is what is refused, not
+      # the missing dimensions.
+      it "ghostty refuses it with the dimension keys as well" do
+        Session.open 40, 12 do |session|
+          pixels = png 7, 11
+          emulate session, "a=t,f=#{pixels.format.value},s=7,v=11,i=1,q=1",
+            Base64.strict_encode(pixels.bytes)
+
+          expect(session).not_to have_image 1
+        end
+      end
+
+      it "ghostty says why, naming the image" do
+        Session.open 40, 12 do |session|
+          pixels = png 7, 11
+          emulate session, "a=t,f=#{pixels.format.value},i=4,q=1",
+            Base64.strict_encode(pixels.bytes)
+
+          reply = session.events.compact_map(&.as? TermBuf::Events::Response).first
+          expect(String.new reply.bytes).to contain "EINVAL: unsupported format"
+          expect(String.new reply.bytes).to contain "i=4"
+        end
+      end
+
+      it "ghostty stores the same picture as raw pixels in the same session" do
+        Session.open 40, 12 do |session|
+          transmit session, 1, png(7, 11)
+          transmit session, 2, raw(7, 11)
+
+          expect(session).not_to have_image 1
+          expect(session).to have_image 2
+        end
+      end
+
+      # The store hears the refusal as the far end having lost the image, which is
+      # right: it has not got it. So the pixels go again on every showing, and a
+      # spec that sends PNGs and wonders why nothing is ever a bare put is seeing
+      # this and not a bug in the store.
+      it "has the store send the pixels again once it hears the refusal" do
+        Session.open 40, 12 do |session|
+          image = session.terminal.images.register png(7, 11)
+          image.show Rect.new(0, 0, 4, 2)
+          session.terminal.paint
+          # The pixels did go, so the store is right to think they are there until
+          # it reads what came back.
+          expect(image.uploaded?).to be_true
+          expect(String.new session.feed.written).to contain "a=T"
+
+          # Draining the events is what hands the refusal to the store.
+          session.events
+          session.feed.rewind
+          image.show Rect.new(0, 4, 4, 2)
+          session.terminal.paint
+
+          # So the pixels go again rather than a bare put over nothing, and the
+          # first showing is put back after them, because sending an image's pixels
+          # again takes its other placements off at the far end.
+          emitted = String.new session.feed.written
+          expect(emitted).to contain "a=T"
+          expect(emitted).to contain "a=p,i=#{image.id},p=1,"
+          expect(emitted.index! "a=T").to be < emitted.index!("a=p")
+          # And the terminal refused them again, so there is still nothing there.
+          expect(session).not_to have_image image.id
+          expect(session.screen.placements).to be_empty
+        end
+      end
+
+      # Against raw pixels, which the terminal does keep, the same sequence sends
+      # them once and positions the second showing.
+      it "sends raw pixels once and positions the rest" do
+        Session.open 40, 12 do |session|
+          image = session.terminal.images.register raw(7, 11)
+          image.show Rect.new(0, 0, 4, 2)
+          session.terminal.paint
+
+          session.events
+          session.feed.rewind
+          image.show Rect.new(0, 4, 4, 2)
+          session.terminal.paint
+
+          emitted = String.new session.feed.written
+          expect(emitted).to contain "a=p"
+          expect(emitted).not_to contain "a=T"
+          expect(session).to have_image image.id
+          expect(session.screen.placements.size).to eq 2
+        end
+      end
+    end
+
+    # And `without` is the scoped form of the same thing, for a spec that wants
+    # one example against a terminal with no decoder.
+    it "puts the decoder back after a without block" do
+      inside = true
+      TermBuf::Spec::Png.without { inside = TermBuf::Spec::Png.installed? }
+
+      expect(inside).to be_false
+      expect(TermBuf::Spec::Png.installed?).to be_true
     end
   end
 

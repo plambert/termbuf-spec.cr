@@ -26,26 +26,28 @@ module TermBuf::Spec
   #
   # Everything here asks afresh, the same as the rest of `Screen`.
   #
-  # ### This emulator draws no PNG
+  # ### What a PNG comes back as
   #
-  # libghostty-vt has no image decoder of its own. One is installed by whatever
-  # embeds it, through `SysOption::DecodePng`, and this harness installs none, so
-  # a `Png` transmission is refused: nothing reaches the image storage, no
-  # placement is made, and the terminal answers
-  # `EINVAL: unsupported format` naming the image. Raw formats are stored and
-  # placed as they always were, which is why every example in the suite uses
-  # `TermBuf::Pixels.rgb`.
+  # libghostty-vt has no image decoder of its own. It asks whoever embeds it for
+  # one, through `SysOption::DecodePng`, and requiring this harness installs
+  # `Png`. So a `Png` transmission is decoded, and the image the storage is
+  # holding is the decoded picture: `Image#format` answers `Rgba` and
+  # `Image#bytesize` is four bytes a pixel, whatever the file's colour type and
+  # bit depth were. `Image#width` and `#height` are the file's own, which the
+  # terminal read out of it, so a transmission carrying no `s=` or `v=` still
+  # reports them.
   #
-  # An application whose pictures are PNGs — which is most of them, since that is
-  # what comes off a disk or a web server — has to hand the harness raw pixels to
-  # be tested against it, or test everything about the placement except the
-  # pixels. Sending `s=` and `v=` with the transmission makes no difference; the
-  # format is what is refused, not the missing dimensions.
+  # `Png.clear` takes the decoder out again, for every terminal in the process,
+  # and `Png.without` does it for one block. A `Png` transmission is then
+  # refused: nothing reaches the image storage, no placement is made, and the
+  # terminal answers `EINVAL: unsupported format` naming the image.
+  # `TermBuf::ImageStore#answered` reads that as the far end having lost the
+  # image, which is right — it has not got it — so the store sends the pixels
+  # again on the next `#show`, and a spec that wonders why nothing is ever `a=p`
+  # is seeing that.
   #
-  # `TermBuf::ImageStore#answered` reads that reply as the far end having lost the
-  # image, which is exactly right — it has not got it — so the store sends the
-  # pixels again on the next `#show`. A spec that sends PNGs and wonders why
-  # nothing is ever `a=p` is seeing that.
+  # A file the decoder cannot read is refused too, with `EINVAL: invalid data`,
+  # which is how the two are told apart.
   struct Screen
     # One image the emulator is holding.
     #
@@ -59,7 +61,8 @@ module TermBuf::Spec
         Rgb
         Rgba
 
-        # Still encoded unless a PNG decoder was installed.
+        # Still encoded, which is what the storage holds only when no PNG
+        # decoder is installed. See `Png`.
         Png
         GrayAlpha
         Gray

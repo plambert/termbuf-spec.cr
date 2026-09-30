@@ -225,4 +225,25 @@ Spectator.describe "the harness API" do
       end
     end
   end
+
+  describe TermBuf::Spec::Png do
+    it "says whether it is installed, and puts itself back" do
+      expect(TermBuf::Spec::Png.installed?).to be_true
+
+      TermBuf::Spec::Png.clear
+      expect(TermBuf::Spec::Png.installed?).to be_false
+      TermBuf::Spec::Png.install
+      expect(TermBuf::Spec::Png.installed?).to be_true
+
+      TermBuf::Spec::Png.without { expect(TermBuf::Spec::Png.installed?).to be_false }
+      expect(TermBuf::Spec::Png.installed?).to be_true
+    end
+
+    it "converts a png to pixels, and answers nil for anything else" do
+      pixels = TermBuf::Spec::Png.pixels File.read(File.join(__DIR__, "pngs", "rgb8.png")).to_slice
+
+      expect(pixels).to be_a TermBuf::Pixels
+      expect(TermBuf::Spec::Png.pixels Bytes[1, 2, 3]).to be_nil
+    end
+  end
 end
